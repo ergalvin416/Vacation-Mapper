@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>Cloud Vacation Mapper V37</title>
+    <title>Cloud Vacation Mapper V38</title>
 
     <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyC78EKBgSd2UsLSPUTGO1A-MF78BU20aLg&libraries=places"></script>
     
@@ -14,52 +14,42 @@
         :root { --bg:#1e1e24; --panel:#16161c; --accent:#4a90e2; --text:#eee; --danger:#e74c3c; }
         body { margin:0; display:flex; height:100vh; font-family:-apple-system,sans-serif; background:#121212; color:var(--text); overflow:hidden; }
         
-        /* Desktop Layout (Default) */
+        /* Layout Engine */
         #container { display:flex; width:100%; height:100%; flex-direction: row; }
         #sidebar { width:350px; background:var(--bg); border-right:1px solid #333; display:flex; flex-direction:column; overflow-y:auto; z-index: 10; }
         #map { flex:1; position: relative; }
 
-        /* --- MOBILE RE-STACKING (The Fix) --- */
+        /* Mobile Specific Layout (Top/Bottom Stack) */
         @media (max-width: 768px) {
-            #container { flex-direction: column; } /* Stack vertically */
-            
-            #map { 
-                height: 66.66vh; /* Map takes top 2/3rds */
-                width: 100%;
-                order: 1; 
-            }
-            
-            #sidebar { 
-                height: 33.33vh; /* Sidebar takes bottom 1/3rd */
-                width: 100%;
-                order: 2; 
-                border-right: none;
-                border-top: 2px solid #333; /* Visual separator */
-            }
+            #container { flex-direction: column; }
+            #map { height: 60vh; width: 100%; order: 1; }
+            #sidebar { height: 40vh; width: 100%; order: 2; border-right: none; border-top: 2px solid #333; }
         }
 
-        /* Styling details */
+        /* Sidebar Elements */
         .section { padding:15px; border-bottom:1px solid #333; }
-        .vacation-item { padding:12px; background:#2a2a32; margin-bottom:8px; border-radius:8px; cursor:pointer; display:flex; justify-content:space-between; align-items: center; border-left: 6px solid transparent; }
+        .vacation-item { padding:12px; background:#2a2a32; margin-bottom:8px; border-radius:8px; cursor:pointer; display:flex; justify-content:space-between; align-items: center; border-left: 6px solid transparent; transition: 0.2s; }
         .vacation-item span { text-transform: uppercase; font-weight: 900; letter-spacing: 0.5px; font-size: 0.9em; color: #fff; }
         .active-trip { border-left: 6px solid var(--accent); background:#3a3a45; }
+        
         .saved-place { padding:10px 0; border-bottom:1px solid #222; }
         .place-row { display:flex; justify-content:space-between; align-items:flex-start; }
         .place-info { cursor:pointer; flex-grow:1; }
         .place-info b { display:block; color:#fff; }
+        
         .note-preview { font-size: 11px; color: #aaa; margin-top: 4px; font-style: italic; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 240px; }
-        .pin-links { display:flex; gap:12px; margin-top:8px; }
-        .pin-links a { color:var(--accent); text-decoration:none; font-size:0.75em; font-weight:bold; text-transform:uppercase; }
         .category-header { font-size:10px; text-transform:uppercase; color:#888; margin-top:10px; font-weight:bold; border-bottom: 1px dotted #444; padding-bottom: 4px; }
+        
+        /* UI Components */
         .form-overlay { display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:#25252b; padding:20px; border-radius:12px; z-index:999; width:85%; max-width:350px; box-shadow: 0 0 30px rgba(0,0,0,0.5); }
         input, textarea, select { width:100%; margin-bottom:10px; background:#121212; color:white; border:1px solid #444; padding:12px; border-radius:6px; box-sizing:border-box; font-size: 16px; }
         button.primary { width:100%; padding:12px; background:var(--accent); border:none; color:white; font-weight:bold; cursor:pointer; border-radius:6px; }
         .icon-btn { background:none; border:none; color:#666; cursor:pointer; font-size:1em; padding:4px; }
-        #sync-status { font-size: 10px; color: #27ae60; margin-bottom: 5px; font-weight: bold; }
         
-        /* GPS Button Styling */
+        /* GPS Locator Button */
         .gps-btn { position: absolute; bottom: 20px; right: 20px; background: white; width: 44px; height: 44px; border-radius: 50%; 
                    display: flex; align-items: center; justify-content: center; box-shadow: 0 0 15px rgba(0,0,0,0.4); z-index: 5; cursor: pointer; font-size: 20px; }
+        #sync-indicator { font-size: 10px; color: #27ae60; margin-bottom: 5px; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -67,14 +57,14 @@
 <div id="container">
     <div id="sidebar">
         <div class="section">
-            <div id="sync-status">● CLOUD SYNC ACTIVE</div>
+            <div id="sync-indicator">● CLOUD ACTIVE</div>
             <h3 style="margin-top:0; font-size: 1.1em;">🌍 SHARED VACATIONS</h3>
             <input id="tripName" placeholder="NEW TRIP NAME..." />
-            <button class="primary" onclick="addTrip()" style="margin-top:5px">CREATE FOLDER</button>
+            <button class="primary" onclick="addTrip()">CREATE FOLDER</button>
             <div id="tripList" style="margin-top:10px"></div>
         </div>
         <div class="section">
-            <input id="search-box" style="width:100%; padding:10px; box-sizing:border-box;" placeholder="🔍 SEARCH PLACES..." />
+            <input id="search-box" placeholder="🔍 SEARCH PLACES..." />
         </div>
         <div class="section" id="place-details">
             <h4 id="activeTripTitle" style="color:var(--accent); margin-top:0;">SAVED PINS</h4>
@@ -82,7 +72,7 @@
         </div>
     </div>
     <div id="map">
-        <div class="gps-btn" onclick="locateMe()">📍</div>
+        <div class="gps-btn" onclick="locateMe()" title="Find My Location">📍</div>
     </div>
 </div>
 
@@ -102,7 +92,7 @@
 </div>
 
 <script>
-// --- FIREBASE CONFIG ---
+// --- UPDATED FIREBASE CONFIG ---
 const firebaseConfig = {
     apiKey: "AIzaSyAlflCNqAaVmui0ipNCCWs3XNsvjprlFYA",
     authDomain: "vacation-mapper-1e723.firebaseapp.com",
@@ -113,7 +103,7 @@ const firebaseConfig = {
     appId: "1:773407322730:web:9b27eb7ee5c3ebac2cd013"
 };
 
-// Initialize Firebase (using the Compat versions already in your script tags)
+// Initialize
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
@@ -151,6 +141,7 @@ function initMap() {
         }
     });
 
+    // Cloud Listener: Auto-updates UI when you or your wife changes data
     db.ref('trips').on('value', (snapshot) => {
         trips = snapshot.val() || {};
         renderTrips();
@@ -158,7 +149,18 @@ function initMap() {
     });
 }
 
-function saveToCloud() { db.ref('trips').set(trips); }
+function saveToCloud() {
+    db.ref('trips').set(trips).catch(e => alert("Cloud Sync Failed: " + e.message));
+}
+
+function addTrip() {
+    const n = document.getElementById('tripName').value.trim(); 
+    if (!n) return alert("Enter a name!");
+    if (trips[n]) return alert("Folder exists!");
+    trips[n] = [];
+    saveToCloud();
+    document.getElementById('tripName').value='';
+}
 
 function displayMarker(pin) {
     let pinColor = pin.type.includes("🔴") ? "#e74c3c" : pin.type.includes("🟢") ? "#27ae60" : "#f1c40f";
@@ -172,14 +174,12 @@ function displayMarker(pin) {
     });
     marker.addListener('click', () => {
         const loc = `https://www.google.com/maps/search/?api=1&query=${pin.lat},${pin.lng}`;
-        const dir = `https://www.google.com/maps/dir/?api=1&destination=${pin.lat},${pin.lng}`;
         infoWindow.setContent(`
             <div style="color:#222; min-width:180px; font-family:sans-serif; padding:5px;">
                 <b style="font-size:14px;">${pin.name}</b>
                 <p style="font-size:12px; margin:8px 0; color:#444;">${pin.notes || ''}</p>
                 <div style="display:flex; gap:10px; border-top:1px solid #eee; padding-top:8px;">
-                    <a href='${loc}' target='_blank' style="font-size:10px; font-weight:bold; color:#666; text-decoration:none;">MAP</a>
-                    <a href='${dir}' target='_blank' style="font-size:10px; font-weight:bold; color:#666; text-decoration:none;">DIRECTIONS</a>
+                    <a href='${loc}' target='_blank' style="font-size:10px; font-weight:bold; color:#4a90e2; text-decoration:none;">VIEW ON GOOGLE MAPS</a>
                 </div>
             </div>`);
         infoWindow.open(map, marker);
@@ -204,7 +204,8 @@ function savePin() {
     } else {
         trips[activeTrip].push(pinData);
     }
-    saveToCloud(); closeModal();
+    saveToCloud();
+    closeModal();
 }
 
 function loadTrip(name) {
@@ -213,6 +214,7 @@ function loadTrip(name) {
     markers.forEach(m=>m.setMap(null)); markers=[];
     (trips[name] || []).forEach(displayMarker);
     renderList();
+    renderTrips();
 }
 
 function renderTrips() {
@@ -254,10 +256,15 @@ function renderList() {
 function locateMe() {
     if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(pos => {
-            map.setCenter({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-            map.setZoom(16);
+            const myLoc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+            map.setCenter(myLoc);
+            map.setZoom(17);
+            new google.maps.Marker({ 
+                position: myLoc, map, 
+                icon: { path: google.maps.SymbolPath.CIRCLE, scale: 8, fillColor: '#4a90e2', fillOpacity: 1, strokeColor: 'white', strokeWeight: 3 } 
+            });
         });
-    } else { alert("Geolocation is not supported by this browser."); }
+    }
 }
 
 function editPin(id) {
@@ -269,7 +276,7 @@ function editPin(id) {
 }
 
 function openModal(lat, lng, name='', address='', id=null, website='') {
-    if (!activeTrip) return alert('Select a trip folder first!');
+    if (!activeTrip) return alert('Select a folder first!');
     pendingCoords = {lat, lng}; editingPinId = id;
     document.getElementById('pName').value = name; 
     document.getElementById('pAddress').value = address; 
@@ -279,15 +286,8 @@ function openModal(lat, lng, name='', address='', id=null, website='') {
     document.getElementById('pinModal').style.display = 'block';
 }
 
-function addTrip() {
-    const n = document.getElementById('tripName').value.trim(); 
-    if (!n||trips[n]) return;
-    trips[n]=[]; saveToCloud();
-    document.getElementById('tripName').value='';
-}
-
 function deleteTrip(name) {
-    if(!confirm(`DELETE FOLDER "${name.toUpperCase()}"?`)) return;
+    if(!confirm(`Delete "${name.toUpperCase()}"?`)) return;
     delete trips[name]; if(activeTrip===name) activeTrip=null;
     saveToCloud();
 }
@@ -318,4 +318,3 @@ window.onload = initMap;
 </script>
 </body>
 </html>
-
