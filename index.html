@@ -102,17 +102,18 @@
 </div>
 
 <script>
-// --- FIREBASE CONFIG (Paste your real config here) ---
+// --- FIREBASE CONFIG ---
 const firebaseConfig = {
-    apiKey: "YOUR_API_KEY",
-    authDomain: "YOUR_PROJECT.firebaseapp.com",
-    databaseURL: "https://YOUR_PROJECT-default-rtdb.firebaseio.com",
-    projectId: "YOUR_PROJECT_ID",
-    storageBucket: "YOUR_PROJECT.appspot.com",
-    messagingSenderId: "YOUR_ID",
-    appId: "YOUR_APP_ID"
+    apiKey: "AIzaSyAlflCNqAaVmui0ipNCCWs3XNsvjprlFYA",
+    authDomain: "vacation-mapper-1e723.firebaseapp.com",
+    databaseURL: "https://vacation-mapper-1e723-default-rtdb.firebaseio.com",
+    projectId: "vacation-mapper-1e723",
+    storageBucket: "vacation-mapper-1e723.firebasestorage.app",
+    messagingSenderId: "773407322730",
+    appId: "1:773407322730:web:9b27eb7ee5c3ebac2cd013"
 };
 
+// Initialize Firebase (using the Compat versions already in your script tags)
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
@@ -317,3 +318,4 @@ window.onload = initMap;
 </script>
 </body>
 </html>
+
