@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>Vacation Mapper V52</title>
+    <title>Vacation Mapper V53</title>
 
     <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyC78EKBgSd2UsLSPUTGO1A-MF78BU20aLg&libraries=places"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
@@ -144,10 +144,22 @@ function displayMarker(pin) {
     let pinColor = pin.type.includes("🔴") ? "#e74c3c" : pin.type.includes("🟢") ? "#27ae60" : "#f1c40f";
     const marker = new google.maps.Marker({ map, position: {lat: parseFloat(pin.lat), lng: parseFloat(pin.lng)}, icon: { path: "M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z", fillColor: pinColor, fillOpacity: 1, strokeColor: "#ffffff", strokeWeight: 2, scale: 1.5, anchor: new google.maps.Point(12, 22) } });
     marker.addListener('click', () => {
-        const mU = `https://www.google.com/maps?q=${pin.lat},${pin.lng}`;
+        const mU = `https://www.google.com/maps/search/?api=1&query=${pin.lat},${pin.lng}`;
         const dU = `https://www.google.com/maps/dir/?api=1&destination=${pin.lat},${pin.lng}`;
         const phoneHtml = pin.phone ? `<a href="tel:${pin.phone}" style="color:var(--accent); text-decoration:none; font-size:12px; display:block; margin:5px 0;">📞 ${pin.phone}</a>` : '';
-        infoWindow.setContent(`<div style="color:#222; padding:5px; min-width:180px; font-family:sans-serif;"><b>${pin.name}</b>${phoneHtml}<p style="font-size:11px; color:#666; margin:5px 0;">${pin.address || ''}</p><div style="display:flex; gap:10px; margin-top:8px;"><a href="${mU}" target="_blank" style="font-size:10px; font-weight:bold; color:var(--accent); text-decoration:none;">MAP</a><a href="${dU}" target="_blank" style="font-size:10px; font-weight:bold; color:var(--accent); text-decoration:none;">DIRECTIONS</a></div></div>`);
+        const webHtml = pin.link ? `<a href="${pin.link}" target="_blank" style="color:var(--accent); text-decoration:none; font-size:12px; display:block; margin:5px 0;">🌐 VISIT WEBSITE</a>` : '';
+        
+        infoWindow.setContent(`
+            <div style="color:#222; padding:5px; min-width:180px; font-family:sans-serif;">
+                <b>${pin.name}</b>
+                ${phoneHtml}
+                ${webHtml}
+                <p style="font-size:11px; color:#666; margin:5px 0;">${pin.address || ''}</p>
+                <div style="display:flex; gap:10px; margin-top:8px;">
+                    <a href="${mU}" target="_blank" style="font-size:10px; font-weight:bold; color:var(--accent); text-decoration:none;">MAP</a>
+                    <a href="${dU}" target="_blank" style="font-size:10px; font-weight:bold; color:var(--accent); text-decoration:none;">DIRECTIONS</a>
+                </div>
+            </div>`);
         infoWindow.open(map, marker);
         if(window.innerWidth <= 768) document.getElementById('sidebar').classList.remove('expanded');
     });
@@ -162,7 +174,7 @@ function renderList() {
         const items = pinArray.filter(p => p.type === cat); if (!items.length) return;
         el.innerHTML += `<div class='category-header'>${cat}</div>`;
         items.forEach(p => {
-            const mU = `https://www.google.com/maps?q=${p.lat},${p.lng}`;
+            const mU = `https://www.google.com/maps/search/?api=1&query=${p.lat},${p.lng}`;
             const dU = `https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}`;
             el.innerHTML += `
                 <div class='saved-place'>
@@ -206,11 +218,16 @@ function showLandmarkPopup(place) {
     const phone = place.formatted_phone_number || '';
     const address = place.formatted_address || '';
     
+    // UI REVISION: Display website and phone directly in the click popup
+    const websiteHtml = website ? `<a href="${website}" target="_blank" style="color:var(--accent); font-weight:bold; font-size:11px; display:block; margin:4px 0;">🌐 VISIT WEBSITE</a>` : '';
+    const phoneHtml = phone ? `<div style="font-size:11px; color:#444; margin-bottom:2px;">📞 ${phone}</div>` : '';
+
     infoWindow.setContent(`
         <div style="color:#222; min-width:180px; font-family:sans-serif; padding:5px;">
             <b style="font-size:14px; display:block; margin-bottom:4px;">${place.name}</b>
             <div style="font-size:11px; color:#666; margin-bottom:2px;">📍 ${address}</div>
-            ${phone ? `<div style="font-size:11px; color:var(--accent); font-weight:bold;">📞 ${phone}</div>` : ''}
+            ${phoneHtml}
+            ${websiteHtml}
             <button onclick="openModal(${lat},${lng},'${place.name.replace(/'/g, "\\'")}','${address.replace(/'/g, "\\'")}','','${website}','${phone}')" 
                 style="width:100%; background:var(--accent); color:white; border:none; padding:10px; border-radius:4px; margin-top:10px; font-weight:bold; cursor:pointer;">
                 PIN THIS PLACE
