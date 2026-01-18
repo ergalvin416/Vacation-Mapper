@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Pro Smart Mapper V35</title>
+
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyC78EKBgSd2UsLSPUTGO1A-MF78BU20aLg&libraries=places"></script>
+
+    <style>
+        :root { --bg:#1e1e24; --panel:#16161c; --accent:#4a90e2; --text:#eee; --danger:#e74c3c; }
+        body { margin:0; display:flex; height:100vh; font-family:-apple-system,sans-serif; background:#121212; color:var(--text); overflow:hidden; }
+        #container { display:flex; width:100%; height:100%; }
+        #sidebar { width:350px; background:var(--bg); border-right:1px solid #333; display:flex; flex-direction:column; overflow-y:auto; }
+        #map { flex:1; position: relative; }
+        
+        .section { padding:15px; border-bottom:1px solid #333; }
+        
+        .vacation-item { padding:14px; background:#2a2a32; margin-bottom:8px; border-radius:8px; cursor:pointer; display:flex; justify-content:space-between; align-items: center; border-left: 6px solid transparent; }
+        .vacation-item span { text-transform: uppercase; font-weight: 900; letter-spacing: 0.5px; font-size: 0.95em; color: #fff; }
+        .active-trip { border-left: 6px solid var(--accent); background:#3a3a45; }
+        
+        .saved-place { padding:12px 0; border-bottom:1px solid #222; }
+        .place-row { display:flex; justify-content:space-between; align-items:flex-start; }
+        .place-info { cursor:pointer; flex-grow:1; }
+        .place-info b { display:block; color:#fff; }
+        
+        /* Note Preview: 1 line max */
+        .note-preview { font-size: 11px; color: #aaa; margin-top: 4px; font-style: italic; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 240px; }
+
+        .pin-links { display:flex; gap:12px; margin-top:8px; }
+        .pin-links a { color:var(--accent); text-decoration:none; font-size:0.75em; font-weight:bold; text-transform:uppercase; }
+        .category-header { font-size:11px; text-transform:uppercase; color:#888; margin-top:15px; font-weight:bold; border-bottom: 1px dotted #444; padding-bottom: 4px; }
+        
+        .form-overlay { display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:#25252b; padding:20px; border-radius:12px; z-index:999; width:85%; max-width:350px; box-shadow: 0 0 30px rgba(0,0,0,0.5); }
+        input, textarea, select { width:100%; margin-bottom:10px; background:#121212; color:white; border:1px solid #444; padding:12px; border-radius:6px; box-sizing:border-box; }
+        button.primary { width:100%; padding:12px; background:var(--accent); border:none; color:white; font-weight:bold; cursor:pointer; border-radius:6px; }
+        .icon-btn { background:none; border:none; color:#666; cursor:pointer; font-size:1em; padding:4px; transition: color 0.2s; }
+        .icon-btn:hover { color: var(--accent); }
+        .del-btn:hover { color: var(--danger); }
+    </style>
+</head>
+<body>
+<div id="container">
+    <div id="sidebar">
+        <div class="section">
+            <h3 style="margin-top:0">🌍 MY VACATIONS</h3>
+            <input id="tripName" placeholder="NEW TRIP NAME..." />
+            <button class="primary" onclick="addTrip()" style="margin-top:10px">CREATE FOLDER</button>
+            <div id="tripList" style="margin-top:10px"></div>
+        </div>
+        <div class="section">
+            <input id="search-box" style="width:100%; padding:12px; box-sizing:border-box;" placeholder="🔍 SEARCH PLACES..." />
+        </div>
+        <div class="section" id="place-details">
+            <h4 id="activeTripTitle" style="color:var(--accent)">SAVED PINS</h4>
+            <div id="groupedList"></div>
+        </div>
+    </div>
+    <div id="map"></div>
+</div>
+
+<div id="pinModal" class="form-overlay">
+    <h3 id="modalTitle">ADD PIN</h3>
+    <input id="pName" placeholder="NAME" />
+    <input id="pAddress" placeholder="ADDRESS" />
+    <input id="pLink" placeholder="WEBSITE URL" />
+    <textarea id="pNotes" placeholder="NOTES..."></textarea>
+    <select id="pType">
+        <option value="🔴 Things to Do">🔴 Things to Do</option>
+        <option value="🟢 Places to Stay">🟢 Places to Stay</option>
+        <option value="🟡 Places to Eat">🟡 Places to Eat</option>
+    </select>
+    <button class="primary" onclick="savePin()">SAVE PIN</button>
+    <button onclick="closeModal()" style="width:100%; background:none; border:none; color:#888; margin-top:10px; cursor:pointer;">Cancel</button>
+</div>
+
+<script>
+let map, service, infoWindow, autocomplete;
+let trips = JSON.parse(localStorage.getItem('vacation_planner_v35')) || {};
+let activeTrip = null;
+let markers = [];
+let pendingCoords = null;
+let editingPinId = null; // Track if we are editing an existing pin
+
+function initMap() {
+    map = new google.maps.Map(document.getElementById('map'), {
+        center:{lat:39.8,lng:-98.5}, zoom:4, mapTypeId:'hybrid', clickableIcons: true
+    });
+    service = new google.maps.places.PlacesService(map);
+    infoWindow = new google.maps.InfoWindow();
+    autocomplete = new google.maps.places.Autocomplete(document.getElementById('search-box'));
+    autocomplete.addListener('place_changed', () => {
+        const p = autocomplete.getPlace();
+        if (!p.geometry) return;
+        map.setCenter(p.geometry.location);
+        map.setZoom(16);
+    });
+    map.addListener('click', (e) => {
+        if (e.placeId) {
+            e.stop(); 
+            service.getDetails({ placeId:e.placeId, fields:['name','formatted_address','geometry','website','url'] }, (p,s) => {
+                if (s==='OK') showLandmarkPopup(p);
+            });
+        } else {
+            openModal(e.latLng.lat(), e.latLng.lng());
+        }
+    });
+    renderTrips();
+}
+
+function displayMarker(pin) {
+    let pinColor = "#4a90e2";
+    if (pin.type.includes("🔴")) pinColor = "#e74c3c";
+    if (pin.type.includes("🟢")) pinColor = "#27ae60";
+    if (pin.type.includes("🟡")) pinColor = "#f1c40f";
+
+    const marker = new google.maps.Marker({
+        map, 
+        position: {lat: parseFloat(pin.lat), lng: parseFloat(pin.lng)},
+        zIndex: 999,
+        icon: {
+            path: "M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z",
+            fillColor: pinColor,
+            fillOpacity: 1,
+            strokeColor: "#ffffff",
+            strokeWeight: 2,
+            scale: 1.5,
+            anchor: new google.maps.Point(12, 22)
+        }
+    });
+    
+    marker.addListener('click', () => {
+        const loc = `https://www.google.com/maps/search/?api=1&query=${pin.lat},${pin.lng}`;
+        const dir = `https://www.google.com/maps/dir/?api=1&destination=${pin.lat},${pin.lng}`;
+        infoWindow.setContent(`
+            <div style="color:#222; min-width:180px; font-family:sans-serif; padding:5px;">
+                <b style="font-size:14px;">${pin.name}</b>
+                <p style="font-size:12px; margin:8px 0; color:#444;">${pin.notes || ''}</p>
+                <div style="display:flex; gap:10px; border-top:1px solid #eee; padding-top:8px;">
+                    <a href='${loc}' target='_blank' style="font-size:10px; font-weight:bold; color:#666; text-decoration:none;">MAP</a>
+                    <a href='${dir}' target='_blank' style="font-size:10px; font-weight:bold; color:#666; text-decoration:none;">DIRECTIONS</a>
+                </div>
+            </div>
+        `);
+        infoWindow.open(map, marker);
+    });
+    markers.push(marker);
+}
+
+function renderList() {
+    const el = document.getElementById('groupedList'); el.innerHTML='';
+    if (!activeTrip) return;
+    ['🔴 Things to Do','🟢 Places to Stay','🟡 Places to Eat'].forEach(cat=>{
+        const items = (trips[activeTrip] || []).filter(p=>p.type === cat);
+        if (!items.length) return;
+        el.innerHTML += `<div class='category-header'>${cat}</div>`;
+        items.forEach(p=>{
+            const loc = `https://www.google.com/maps/search/?api=1&query=${p.lat},${p.lng}`;
+            const dir = `https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}`;
+            el.innerHTML += `
+                <div class='saved-place'>
+                    <div class='place-row'>
+                        <div class='place-info' onclick='map.setCenter({lat:${p.lat},lng:${p.lng}}); map.setZoom(16);'>
+                            <b>${p.name}</b>
+                            <div class="note-preview">${p.notes || ''}</div>
+                        </div>
+                        <div style="display:flex; gap:5px;">
+                            <button class='icon-btn' onclick='editPin("${p.id}")'>✏️</button>
+                            <button class='icon-btn del-btn' onclick='deletePin("${p.id}")'>×</button>
+                        </div>
+                    </div>
+                    <div class='pin-links'>
+                        ${p.link ? `<a href="${p.link}" target="_blank">WEBSITE</a>` : ''}
+                        <a href="${loc}" target="_blank">MAP</a>
+                        <a href="${dir}" target="_blank">DIRECTIONS</a>
+                    </div>
+                </div>`;
+        });
+    });
+}
+
+function editPin(id) {
+    const pin = trips[activeTrip].find(p => p.id == id);
+    if (!pin) return;
+    openModal(pin.lat, pin.lng, pin.name, pin.address, pin.id, pin.link);
+    document.getElementById('pNotes').value = pin.notes || '';
+    document.getElementById('pType').value = pin.type;
+    document.getElementById('modalTitle').innerText = "EDIT PIN";
+}
+
+function openModal(lat, lng, name='', address='', id=null, website='') {
+    if (!activeTrip) return alert('Select a trip folder first!');
+    pendingCoords = {lat, lng};
+    editingPinId = id;
+    document.getElementById('pName').value = name; 
+    document.getElementById('pAddress').value = address; 
+    document.getElementById('pLink').value = website; 
+    document.getElementById('pNotes').value = '';
+    document.getElementById('modalTitle').innerText = "ADD PIN";
+    document.getElementById('pinModal').style.display = 'block';
+}
+
+function savePin() {
+    const pinData = {
+        id: editingPinId || Date.now(),
+        lat: pendingCoords.lat, lng: pendingCoords.lng,
+        name: document.getElementById('pName').value, 
+        address: document.getElementById('pAddress').value, 
+        link: document.getElementById('pLink').value, 
+        notes: document.getElementById('pNotes').value, 
+        type: document.getElementById('pType').value
+    };
+
+    if (editingPinId) {
+        const idx = trips[activeTrip].findIndex(p => p.id == editingPinId);
+        trips[activeTrip][idx] = pinData;
+    } else {
+        trips[activeTrip].push(pinData);
+    }
+    
+    save(); loadTrip(activeTrip); closeModal();
+}
+
+function renderTrips() {
+    const el = document.getElementById('tripList'); el.innerHTML='';
+    Object.keys(trips).forEach(n=>{
+        const div = document.createElement('div');
+        div.className = `vacation-item ${activeTrip === n ? 'active-trip' : ''}`;
+        div.innerHTML = `<span>${n}</span><button class='icon-btn' style='color:#666' onclick='event.stopPropagation(); deleteTrip("${n}")'>🗑️</button>`;
+        div.onclick = () => loadTrip(n);
+        el.appendChild(div);
+    });
+}
+
+function loadTrip(name) {
+    activeTrip = name;
+    document.getElementById('activeTripTitle').innerText = name.toUpperCase();
+    markers.forEach(m=>m.setMap(null)); markers=[];
+    (trips[name] || []).forEach(displayMarker);
+    renderList(); renderTrips();
+}
+
+function showLandmarkPopup(place) {
+    const lat = place.geometry.location.lat();
+    const lng = place.geometry.location.lng();
+    const website = place.website || '';
+    infoWindow.setContent(`
+        <div style="color:#222; min-width:180px; font-family:sans-serif;">
+            <b style="font-size:14px;">${place.name}</b>
+            <p style="font-size:11px; color:#666;">${place.formatted_address || ''}</p>
+            <button onclick="openModal(${lat},${lng},'${place.name.replace(/'/g, "\\'")}','','','${website}')" 
+                style="width:100%; background:#4a90e2; color:white; border:none; padding:8px; border-radius:4px; font-weight:bold; cursor:pointer;">
+                PIN THIS PLACE
+            </button>
+        </div>
+    `);
+    infoWindow.setPosition(place.geometry.location);
+    infoWindow.open(map);
+}
+
+function addTrip() {
+    const n = document.getElementById('tripName').value.trim(); 
+    if (!n||trips[n]) return;
+    trips[n]=[]; save(); loadTrip(n); 
+    document.getElementById('tripName').value='';
+}
+function deleteTrip(name) {
+    if(!confirm(`DELETE FOLDER "${name.toUpperCase()}"?`)) return;
+    delete trips[name];
+    if(activeTrip===name) activeTrip=null;
+    save(); renderTrips(); renderList();
+}
+function deletePin(id) {
+    trips[activeTrip] = trips[activeTrip].filter(p => p.id != id);
+    save(); loadTrip(activeTrip);
+}
+function closeModal(){ document.getElementById('pinModal').style.display='none'; }
+function save(){ localStorage.setItem('vacation_planner_v35',JSON.stringify(trips)); }
+window.onload = initMap;
+</script>
+</body>
+</html>
