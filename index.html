@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>Vacation Mapper V51</title>
+    <title>Vacation Mapper V52</title>
 
     <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyC78EKBgSd2UsLSPUTGO1A-MF78BU20aLg&libraries=places"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
@@ -14,25 +14,20 @@
         body { margin:0; display:flex; height:100vh; font-family:-apple-system,sans-serif; background:#121212; color:var(--text); overflow:hidden; }
         #container { display:flex; width:100%; height:100%; flex-direction: row; }
         
-        /* Sidebar Styling */
         #sidebar { width:350px; background:var(--bg); border-right:1px solid #333; display:flex; flex-direction:column; overflow-y:auto; z-index: 10; transition: transform 0.3s ease; }
         #map { flex:1; position: relative; }
         
-        /* Mobile "Bottom Sheet" Styling */
         @media (max-width: 768px) {
             #container { flex-direction: column; }
             #map { height: 100vh; width: 100%; position: absolute; top:0; left:0; }
             #sidebar { 
-                position: fixed; bottom: 0; left: 0; width: 100%; height: 70vh; 
+                position: fixed; bottom: 0; left: 0; width: 100%; height: 75vh; 
                 border-right: none; border-top: 1px solid #444; border-radius: 20px 20px 0 0;
-                transform: translateY(calc(70vh - 60px)); /* Collapsed by default */
+                transform: translateY(calc(75vh - 60px));
                 box-shadow: 0 -5px 20px rgba(0,0,0,0.5);
             }
             #sidebar.expanded { transform: translateY(0); }
-            .mobile-handle { 
-                display: block !important; width: 100%; height: 60px; background: #2a2a32; 
-                text-align: center; line-height: 60px; cursor: pointer; border-radius: 20px 20px 0 0;
-            }
+            .mobile-handle { display: block !important; width: 100%; height: 60px; background: #2a2a32; text-align: center; line-height: 60px; cursor: pointer; border-radius: 20px 20px 0 0; }
             .handle-bar { width: 40px; height: 5px; background: #666; border-radius: 10px; display: inline-block; margin-top: 15px; }
         }
 
@@ -42,15 +37,16 @@
         .active-trip { border-left: 6px solid var(--accent); background:#3a3a45; }
         .saved-place { padding:12px 0; border-bottom:1px solid #222; }
         .place-info b { display:block; color:#fff; font-size: 1.1em; }
-        .note-preview { font-size: 11px; color: #aaa; margin-top: 4px; font-style: italic; }
-        .pin-links { display:flex; gap:12px; margin-top:10px; }
-        .pin-links a { color:var(--accent); text-decoration:none; font-size:0.75em; font-weight:bold; text-transform:uppercase; border: 1px solid #444; padding: 4px 8px; border-radius: 4px; }
+        .place-meta { font-size: 11px; color: #888; margin-top: 3px; line-height: 1.4; }
+        .note-preview { font-size: 11px; color: #aaa; margin-top: 6px; font-style: italic; border-left: 2px solid #444; padding-left: 8px; }
+        .pin-links { display:flex; flex-wrap: wrap; gap:8px; margin-top:10px; }
+        .pin-links a { color:var(--accent); text-decoration:none; font-size:0.7em; font-weight:bold; text-transform:uppercase; border: 1px solid #444; padding: 5px 10px; border-radius: 4px; }
         .category-header { font-size:10px; text-transform:uppercase; color:#888; margin-top:15px; font-weight:bold; border-bottom: 1px dotted #444; padding-bottom: 4px; }
         .form-overlay { display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:#25252b; padding:20px; border-radius:12px; z-index:999; width:85%; max-width:350px; box-shadow: 0 0 30px rgba(0,0,0,0.5); }
         input, textarea, select { width:100%; margin-bottom:10px; background:#121212; color:white; border:1px solid #444; padding:12px; border-radius:6px; box-sizing:border-box; font-size: 16px; }
         button.primary { width:100%; padding:12px; background:var(--accent); border:none; color:white; font-weight:bold; cursor:pointer; border-radius:6px; }
         .icon-btn { background:none; border:none; color:#666; cursor:pointer; font-size:1em; padding:4px; }
-        .gps-btn { position: absolute; bottom: 80px; right: 20px; background: white; width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 15px rgba(0,0,0,0.4); z-index: 5; cursor: pointer; font-size: 20px; }
+        .gps-btn { position: absolute; bottom: 85px; right: 20px; background: white; width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 15px rgba(0,0,0,0.4); z-index: 5; cursor: pointer; font-size: 20px; }
     </style>
 </head>
 <body>
@@ -77,6 +73,7 @@
     <h3 id="modalTitle">ADD PIN</h3>
     <input id="pName" placeholder="NAME" />
     <input id="pAddress" placeholder="ADDRESS" />
+    <input id="pPhone" placeholder="PHONE NUMBER" />
     <input id="pLink" placeholder="WEBSITE URL" />
     <textarea id="pNotes" placeholder="NOTES..."></textarea>
     <select id="pType">
@@ -119,18 +116,15 @@ function initMap() {
     map.addListener('click', (e) => {
         if (e.placeId) {
             e.stop();
-            service.getDetails({ placeId: e.placeId, fields: ['name', 'formatted_address', 'geometry', 'website'] }, (p, s) => { if (s === 'OK') showLandmarkPopup(p); });
+            service.getDetails({ placeId: e.placeId, fields: ['name', 'formatted_address', 'geometry', 'website', 'formatted_phone_number'] }, (p, s) => { 
+                if (s === 'OK') showLandmarkPopup(p); 
+            });
         } else { openModal(e.latLng.lat(), e.latLng.lng()); }
     });
     db.ref('trips').on('value', (s) => { trips = s.val() || {}; renderTrips(); if (activeTrip) loadTrip(activeTrip); });
 }
 
-// Mobile Toggle Logic
-function toggleSidebar(e) {
-    if (window.innerWidth > 768) return;
-    const sidebar = document.getElementById('sidebar');
-    sidebar.classList.toggle('expanded');
-}
+function toggleSidebar(e) { if (window.innerWidth <= 768) document.getElementById('sidebar').classList.toggle('expanded'); }
 
 function addTrip() {
     const input = document.getElementById('tripName');
@@ -142,7 +136,7 @@ function addTrip() {
 function savePin() {
     if (!activeTrip) return alert("Select folder!");
     const pinId = editingPinId || Date.now();
-    const pinData = { id: pinId, lat: pendingCoords.lat, lng: pendingCoords.lng, name: document.getElementById('pName').value, address: document.getElementById('pAddress').value, link: document.getElementById('pLink').value, notes: document.getElementById('pNotes').value, type: document.getElementById('pType').value };
+    const pinData = { id: pinId, lat: pendingCoords.lat, lng: pendingCoords.lng, name: document.getElementById('pName').value, address: document.getElementById('pAddress').value, phone: document.getElementById('pPhone').value, link: document.getElementById('pLink').value, notes: document.getElementById('pNotes').value, type: document.getElementById('pType').value };
     db.ref(`trips/${activeTrip}/pins/${pinId}`).set(pinData).then(() => closeModal());
 }
 
@@ -152,7 +146,8 @@ function displayMarker(pin) {
     marker.addListener('click', () => {
         const mU = `https://www.google.com/maps?q=${pin.lat},${pin.lng}`;
         const dU = `https://www.google.com/maps/dir/?api=1&destination=${pin.lat},${pin.lng}`;
-        infoWindow.setContent(`<div style="color:#222; padding:5px; min-width:180px;"><b>${pin.name}</b><p style="font-size:12px;">${pin.notes || ''}</p><div style="display:flex; gap:10px;"><a href="${mU}" target="_blank" style="font-size:10px;">MAP</a><a href="${dU}" target="_blank" style="font-size:10px;">DIRECTIONS</a></div></div>`);
+        const phoneHtml = pin.phone ? `<a href="tel:${pin.phone}" style="color:var(--accent); text-decoration:none; font-size:12px; display:block; margin:5px 0;">📞 ${pin.phone}</a>` : '';
+        infoWindow.setContent(`<div style="color:#222; padding:5px; min-width:180px; font-family:sans-serif;"><b>${pin.name}</b>${phoneHtml}<p style="font-size:11px; color:#666; margin:5px 0;">${pin.address || ''}</p><div style="display:flex; gap:10px; margin-top:8px;"><a href="${mU}" target="_blank" style="font-size:10px; font-weight:bold; color:var(--accent); text-decoration:none;">MAP</a><a href="${dU}" target="_blank" style="font-size:10px; font-weight:bold; color:var(--accent); text-decoration:none;">DIRECTIONS</a></div></div>`);
         infoWindow.open(map, marker);
         if(window.innerWidth <= 768) document.getElementById('sidebar').classList.remove('expanded');
     });
@@ -169,7 +164,27 @@ function renderList() {
         items.forEach(p => {
             const mU = `https://www.google.com/maps?q=${p.lat},${p.lng}`;
             const dU = `https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}`;
-            el.innerHTML += `<div class='saved-place'><div class='place-row'><div class='place-info' onclick='event.stopPropagation(); map.setCenter({lat:${p.lat},lng:${p.lng}}); map.setZoom(16); document.getElementById("sidebar").classList.remove("expanded");'><b>${p.name}</b><div class="note-preview">${p.notes || ''}</div></div><div style="display:flex; gap:5px;"><button class='icon-btn' onclick='event.stopPropagation(); editPin("${p.id}")'>✏️</button><button class='icon-btn' style='color:var(--danger)' onclick='event.stopPropagation(); deletePin("${p.id}")'>×</button></div></div><div class="pin-links" onclick="event.stopPropagation()"><a href="${mU}" target="_blank">MAP</a><a href="${dU}" target="_blank">DIRECTIONS</a>${p.link ? `<a href="${p.link}" target="_blank">WEB</a>` : ''}</div></div>`;
+            el.innerHTML += `
+                <div class='saved-place'>
+                    <div class='place-row'>
+                        <div class='place-info' onclick='event.stopPropagation(); map.setCenter({lat:${p.lat},lng:${p.lng}}); map.setZoom(16); document.getElementById("sidebar").classList.remove("expanded");'>
+                            <b>${p.name}</b>
+                            <div class="place-meta">${p.address || ''}</div>
+                            ${p.phone ? `<div class="place-meta" style="color:var(--accent)">📞 ${p.phone}</div>` : ''}
+                            ${p.notes ? `<div class="note-preview">${p.notes}</div>` : ''}
+                        </div>
+                        <div style="display:flex; gap:5px;">
+                            <button class='icon-btn' onclick='event.stopPropagation(); editPin("${p.id}")'>✏️</button>
+                            <button class='icon-btn' style='color:var(--danger)' onclick='event.stopPropagation(); deletePin("${p.id}")'>×</button>
+                        </div>
+                    </div>
+                    <div class="pin-links" onclick="event.stopPropagation()">
+                        <a href="${mU}" target="_blank">MAP</a>
+                        <a href="${dU}" target="_blank">DIRECTIONS</a>
+                        ${p.link ? `<a href="${p.link}" target="_blank">WEB</a>` : ''}
+                        ${p.phone ? `<a href="tel:${p.phone}">CALL</a>` : ''}
+                    </div>
+                </div>`;
         });
     });
 }
@@ -177,9 +192,8 @@ function renderList() {
 function renderTrips() {
     const el = document.getElementById('tripList'); el.innerHTML = '';
     Object.keys(trips).forEach(k => {
-        const n = trips[k].name || k;
         const div = document.createElement('div'); div.className = `vacation-item ${activeTrip === k ? 'active-trip' : ''}`;
-        div.innerHTML = `<span>${n}</span><button class='icon-btn' onclick='event.stopPropagation(); deleteTrip("${k}")'>🗑️</button>`;
+        div.innerHTML = `<span>${(trips[k].name || k).toUpperCase()}</span><button class='icon-btn' onclick='event.stopPropagation(); deleteTrip("${k}")'>🗑️</button>`;
         div.onclick = (e) => { e.stopPropagation(); loadTrip(k); }; el.appendChild(div);
     });
 }
@@ -188,21 +202,34 @@ function loadTrip(key) { activeTrip = key; document.getElementById('activeTripTi
 
 function showLandmarkPopup(place) {
     const lat = place.geometry.location.lat(), lng = place.geometry.location.lng();
-    infoWindow.setContent(`<div style="color:#222; min-width:180px;"><b>${place.name}</b><button onclick="openModal(${lat},${lng},'${place.name.replace(/'/g, "\\'")}','${(place.formatted_address || '').replace(/'/g, "\\'")}','','${place.website || ''}')" style="width:100%; background:var(--accent); color:white; border:none; padding:10px; border-radius:4px; margin-top:10px; font-weight:bold; cursor:pointer;">PIN THIS PLACE</button></div>`);
+    const website = place.website || '';
+    const phone = place.formatted_phone_number || '';
+    const address = place.formatted_address || '';
+    
+    infoWindow.setContent(`
+        <div style="color:#222; min-width:180px; font-family:sans-serif; padding:5px;">
+            <b style="font-size:14px; display:block; margin-bottom:4px;">${place.name}</b>
+            <div style="font-size:11px; color:#666; margin-bottom:2px;">📍 ${address}</div>
+            ${phone ? `<div style="font-size:11px; color:var(--accent); font-weight:bold;">📞 ${phone}</div>` : ''}
+            <button onclick="openModal(${lat},${lng},'${place.name.replace(/'/g, "\\'")}','${address.replace(/'/g, "\\'")}','','${website}','${phone}')" 
+                style="width:100%; background:var(--accent); color:white; border:none; padding:10px; border-radius:4px; margin-top:10px; font-weight:bold; cursor:pointer;">
+                PIN THIS PLACE
+            </button>
+        </div>`);
     infoWindow.setPosition(place.geometry.location); infoWindow.open(map);
     if(window.innerWidth <= 768) document.getElementById('sidebar').classList.remove('expanded');
 }
 
-function openModal(lat, lng, name = '', address = '', id = '', website = '') {
+function openModal(lat, lng, name = '', address = '', id = '', website = '', phone = '') {
     if (!activeTrip) return alert('Select folder!');
     pendingCoords = { lat, lng }; editingPinId = id;
-    document.getElementById('pName').value = name; document.getElementById('pAddress').value = address; document.getElementById('pLink').value = website;
+    document.getElementById('pName').value = name; document.getElementById('pAddress').value = address; document.getElementById('pPhone').value = phone; document.getElementById('pLink').value = website;
     if (!id) { document.getElementById('pNotes').value = ''; document.getElementById('pType').value = '🔴 Things to Do'; }
     document.getElementById('modalTitle').innerText = id ? "EDIT PIN" : "ADD PIN";
     document.getElementById('pinModal').style.display = 'block';
 }
 
-function editPin(id) { const pin = trips[activeTrip].pins[id]; document.getElementById('pNotes').value = pin.notes || ''; document.getElementById('pType').value = pin.type; openModal(pin.lat, pin.lng, pin.name, pin.address, pin.id, pin.link); }
+function editPin(id) { const pin = trips[activeTrip].pins[id]; document.getElementById('pNotes').value = pin.notes || ''; document.getElementById('pType').value = pin.type; openModal(pin.lat, pin.lng, pin.name, pin.address, pin.id, pin.link, pin.phone); }
 function deleteTrip(key) { if (confirm(`Delete?`)) { db.ref(`trips/${key}`).remove(); if (activeTrip === key) activeTrip = null; } }
 function deletePin(id) { db.ref(`trips/${activeTrip}/pins/${id}`).remove(); }
 function closeModal() { document.getElementById('pinModal').style.display = 'none'; }
