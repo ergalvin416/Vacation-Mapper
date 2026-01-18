@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>Vacation Mapper V50</title>
+    <title>Vacation Mapper V51</title>
 
     <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyC78EKBgSd2UsLSPUTGO1A-MF78BU20aLg&libraries=places"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
@@ -13,9 +13,30 @@
         :root { --bg:#1e1e24; --panel:#16161c; --accent:#4a90e2; --text:#eee; --danger:#e74c3c; }
         body { margin:0; display:flex; height:100vh; font-family:-apple-system,sans-serif; background:#121212; color:var(--text); overflow:hidden; }
         #container { display:flex; width:100%; height:100%; flex-direction: row; }
-        #sidebar { width:350px; background:var(--bg); border-right:1px solid #333; display:flex; flex-direction:column; overflow-y:auto; z-index: 10; }
+        
+        /* Sidebar Styling */
+        #sidebar { width:350px; background:var(--bg); border-right:1px solid #333; display:flex; flex-direction:column; overflow-y:auto; z-index: 10; transition: transform 0.3s ease; }
         #map { flex:1; position: relative; }
-        @media (max-width: 768px) { #container { flex-direction: column; } #map { height: 60vh; width: 100%; order: 1; } #sidebar { height: 40vh; width: 100%; order: 2; border-right: none; border-top: 2px solid #333; } }
+        
+        /* Mobile "Bottom Sheet" Styling */
+        @media (max-width: 768px) {
+            #container { flex-direction: column; }
+            #map { height: 100vh; width: 100%; position: absolute; top:0; left:0; }
+            #sidebar { 
+                position: fixed; bottom: 0; left: 0; width: 100%; height: 70vh; 
+                border-right: none; border-top: 1px solid #444; border-radius: 20px 20px 0 0;
+                transform: translateY(calc(70vh - 60px)); /* Collapsed by default */
+                box-shadow: 0 -5px 20px rgba(0,0,0,0.5);
+            }
+            #sidebar.expanded { transform: translateY(0); }
+            .mobile-handle { 
+                display: block !important; width: 100%; height: 60px; background: #2a2a32; 
+                text-align: center; line-height: 60px; cursor: pointer; border-radius: 20px 20px 0 0;
+            }
+            .handle-bar { width: 40px; height: 5px; background: #666; border-radius: 10px; display: inline-block; margin-top: 15px; }
+        }
+
+        .mobile-handle { display: none; }
         .section { padding:15px; border-bottom:1px solid #333; }
         .vacation-item { padding:12px; background:#2a2a32; margin-bottom:8px; border-radius:8px; cursor:pointer; display:flex; justify-content:space-between; align-items: center; border-left: 6px solid transparent; }
         .active-trip { border-left: 6px solid var(--accent); background:#3a3a45; }
@@ -29,19 +50,21 @@
         input, textarea, select { width:100%; margin-bottom:10px; background:#121212; color:white; border:1px solid #444; padding:12px; border-radius:6px; box-sizing:border-box; font-size: 16px; }
         button.primary { width:100%; padding:12px; background:var(--accent); border:none; color:white; font-weight:bold; cursor:pointer; border-radius:6px; }
         .icon-btn { background:none; border:none; color:#666; cursor:pointer; font-size:1em; padding:4px; }
-        .gps-btn { position: absolute; bottom: 20px; right: 20px; background: white; width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 15px rgba(0,0,0,0.4); z-index: 5; cursor: pointer; font-size: 20px; }
+        .gps-btn { position: absolute; bottom: 80px; right: 20px; background: white; width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 15px rgba(0,0,0,0.4); z-index: 5; cursor: pointer; font-size: 20px; }
     </style>
 </head>
 <body>
+
 <div id="container">
-    <div id="sidebar">
+    <div id="sidebar" onclick="toggleSidebar(event)">
+        <div class="mobile-handle"><div class="handle-bar"></div></div>
         <div class="section">
             <h3 style="margin-top:0;">🌍 SHARED VACATIONS</h3>
-            <input id="tripName" placeholder="NEW TRIP NAME..." />
-            <button class="primary" onclick="addTrip()">CREATE FOLDER</button>
+            <input id="tripName" placeholder="NEW TRIP NAME..." onclick="event.stopPropagation()" />
+            <button class="primary" onclick="event.stopPropagation(); addTrip()">CREATE FOLDER</button>
             <div id="tripList" style="margin-top:10px"></div>
         </div>
-        <div class="section"><input id="search-box" placeholder="🔍 SEARCH PLACES..." /></div>
+        <div class="section"><input id="search-box" placeholder="🔍 SEARCH PLACES..." onclick="event.stopPropagation()" /></div>
         <div class="section" id="place-details">
             <h4 id="activeTripTitle" style="color:var(--accent); margin-top:0;">SAVED PINS</h4>
             <div id="groupedList"></div>
@@ -86,7 +109,13 @@ function initMap() {
     service = new google.maps.places.PlacesService(map);
     infoWindow = new google.maps.InfoWindow();
     autocomplete = new google.maps.places.Autocomplete(document.getElementById('search-box'));
-    autocomplete.addListener('place_changed', () => { const p = autocomplete.getPlace(); if (p.geometry) { map.setCenter(p.geometry.location); map.setZoom(16); } });
+    autocomplete.addListener('place_changed', () => { 
+        const p = autocomplete.getPlace(); 
+        if (p.geometry) { 
+            map.setCenter(p.geometry.location); map.setZoom(16);
+            if(window.innerWidth <= 768) document.getElementById('sidebar').classList.remove('expanded');
+        } 
+    });
     map.addListener('click', (e) => {
         if (e.placeId) {
             e.stop();
@@ -96,10 +125,17 @@ function initMap() {
     db.ref('trips').on('value', (s) => { trips = s.val() || {}; renderTrips(); if (activeTrip) loadTrip(activeTrip); });
 }
 
+// Mobile Toggle Logic
+function toggleSidebar(e) {
+    if (window.innerWidth > 768) return;
+    const sidebar = document.getElementById('sidebar');
+    sidebar.classList.toggle('expanded');
+}
+
 function addTrip() {
     const input = document.getElementById('tripName');
     const n = input.value.trim(); if (!n) return;
-    const safeKey = n.replace(/[.#$/\[\]]/g, '_'); // FIXED: Safe Database Keys
+    const safeKey = n.replace(/[.#$/\[\]]/g, '_');
     db.ref(`trips/${safeKey}`).set({ created: Date.now(), name: n, pins: {} }).then(() => { input.value = ''; });
 }
 
@@ -118,6 +154,7 @@ function displayMarker(pin) {
         const dU = `https://www.google.com/maps/dir/?api=1&destination=${pin.lat},${pin.lng}`;
         infoWindow.setContent(`<div style="color:#222; padding:5px; min-width:180px;"><b>${pin.name}</b><p style="font-size:12px;">${pin.notes || ''}</p><div style="display:flex; gap:10px;"><a href="${mU}" target="_blank" style="font-size:10px;">MAP</a><a href="${dU}" target="_blank" style="font-size:10px;">DIRECTIONS</a></div></div>`);
         infoWindow.open(map, marker);
+        if(window.innerWidth <= 768) document.getElementById('sidebar').classList.remove('expanded');
     });
     markers.push(marker);
 }
@@ -132,7 +169,7 @@ function renderList() {
         items.forEach(p => {
             const mU = `https://www.google.com/maps?q=${p.lat},${p.lng}`;
             const dU = `https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}`;
-            el.innerHTML += `<div class='saved-place'><div class='place-row'><div class='place-info' onclick='map.setCenter({lat:${p.lat},lng:${p.lng}}); map.setZoom(16);'><b>${p.name}</b><div class="note-preview">${p.notes || ''}</div></div><div style="display:flex; gap:5px;"><button class='icon-btn' onclick='editPin("${p.id}")'>✏️</button><button class='icon-btn' style='color:var(--danger)' onclick='deletePin("${p.id}")'>×</button></div></div><div class="pin-links"><a href="${mU}" target="_blank">MAP</a><a href="${dU}" target="_blank">DIRECTIONS</a>${p.link ? `<a href="${p.link}" target="_blank">WEB</a>` : ''}</div></div>`;
+            el.innerHTML += `<div class='saved-place'><div class='place-row'><div class='place-info' onclick='event.stopPropagation(); map.setCenter({lat:${p.lat},lng:${p.lng}}); map.setZoom(16); document.getElementById("sidebar").classList.remove("expanded");'><b>${p.name}</b><div class="note-preview">${p.notes || ''}</div></div><div style="display:flex; gap:5px;"><button class='icon-btn' onclick='event.stopPropagation(); editPin("${p.id}")'>✏️</button><button class='icon-btn' style='color:var(--danger)' onclick='event.stopPropagation(); deletePin("${p.id}")'>×</button></div></div><div class="pin-links" onclick="event.stopPropagation()"><a href="${mU}" target="_blank">MAP</a><a href="${dU}" target="_blank">DIRECTIONS</a>${p.link ? `<a href="${p.link}" target="_blank">WEB</a>` : ''}</div></div>`;
         });
     });
 }
@@ -143,7 +180,7 @@ function renderTrips() {
         const n = trips[k].name || k;
         const div = document.createElement('div'); div.className = `vacation-item ${activeTrip === k ? 'active-trip' : ''}`;
         div.innerHTML = `<span>${n}</span><button class='icon-btn' onclick='event.stopPropagation(); deleteTrip("${k}")'>🗑️</button>`;
-        div.onclick = () => loadTrip(k); el.appendChild(div);
+        div.onclick = (e) => { e.stopPropagation(); loadTrip(k); }; el.appendChild(div);
     });
 }
 
@@ -153,13 +190,14 @@ function showLandmarkPopup(place) {
     const lat = place.geometry.location.lat(), lng = place.geometry.location.lng();
     infoWindow.setContent(`<div style="color:#222; min-width:180px;"><b>${place.name}</b><button onclick="openModal(${lat},${lng},'${place.name.replace(/'/g, "\\'")}','${(place.formatted_address || '').replace(/'/g, "\\'")}','','${place.website || ''}')" style="width:100%; background:var(--accent); color:white; border:none; padding:10px; border-radius:4px; margin-top:10px; font-weight:bold; cursor:pointer;">PIN THIS PLACE</button></div>`);
     infoWindow.setPosition(place.geometry.location); infoWindow.open(map);
+    if(window.innerWidth <= 768) document.getElementById('sidebar').classList.remove('expanded');
 }
 
 function openModal(lat, lng, name = '', address = '', id = '', website = '') {
     if (!activeTrip) return alert('Select folder!');
     pendingCoords = { lat, lng }; editingPinId = id;
     document.getElementById('pName').value = name; document.getElementById('pAddress').value = address; document.getElementById('pLink').value = website;
-    if (!id) { document.getElementById('pNotes').value = ''; document.getElementById('pType').value = '🔴 Things to Do'; } // FIXED: Modal Reset
+    if (!id) { document.getElementById('pNotes').value = ''; document.getElementById('pType').value = '🔴 Things to Do'; }
     document.getElementById('modalTitle').innerText = id ? "EDIT PIN" : "ADD PIN";
     document.getElementById('pinModal').style.display = 'block';
 }
@@ -168,7 +206,7 @@ function editPin(id) { const pin = trips[activeTrip].pins[id]; document.getEleme
 function deleteTrip(key) { if (confirm(`Delete?`)) { db.ref(`trips/${key}`).remove(); if (activeTrip === key) activeTrip = null; } }
 function deletePin(id) { db.ref(`trips/${activeTrip}/pins/${id}`).remove(); }
 function closeModal() { document.getElementById('pinModal').style.display = 'none'; }
-function locateMe() { if (navigator.geolocation) { navigator.geolocation.getCurrentPosition(pos => { map.setCenter({ lat: pos.coords.latitude, lng: pos.coords.longitude }); map.setZoom(17); }); } }
+function locateMe() { if (navigator.geolocation) { navigator.geolocation.getCurrentPosition(pos => { map.setCenter({ lat: pos.coords.latitude, lng: pos.coords.longitude }); map.setZoom(17); if(window.innerWidth <= 768) document.getElementById('sidebar').classList.remove('expanded'); }); } }
 window.onload = initMap;
 </script>
 </body>
