@@ -3,29 +3,23 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>Vacation Mapper V53</title>
+    <title>Vacation Mapper V55</title>
 
     <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyC78EKBgSd2UsLSPUTGO1A-MF78BU20aLg&libraries=places"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
 
     <style>
-        :root { --bg:#1e1e24; --panel:#16161c; --accent:#4a90e2; --text:#eee; --danger:#e74c3c; }
+        :root { --bg:#1e1e24; --panel:#16161c; --accent:#4a90e2; --text:#eee; --danger:#e74c3c; --todo:#e74c3c; --stay:#27ae60; --eat:#f1c40f; }
         body { margin:0; display:flex; height:100vh; font-family:-apple-system,sans-serif; background:#121212; color:var(--text); overflow:hidden; }
         #container { display:flex; width:100%; height:100%; flex-direction: row; }
-        
         #sidebar { width:350px; background:var(--bg); border-right:1px solid #333; display:flex; flex-direction:column; overflow-y:auto; z-index: 10; transition: transform 0.3s ease; }
         #map { flex:1; position: relative; }
         
         @media (max-width: 768px) {
             #container { flex-direction: column; }
             #map { height: 100vh; width: 100%; position: absolute; top:0; left:0; }
-            #sidebar { 
-                position: fixed; bottom: 0; left: 0; width: 100%; height: 75vh; 
-                border-right: none; border-top: 1px solid #444; border-radius: 20px 20px 0 0;
-                transform: translateY(calc(75vh - 60px));
-                box-shadow: 0 -5px 20px rgba(0,0,0,0.5);
-            }
+            #sidebar { position: fixed; bottom: 0; left: 0; width: 100%; height: 75vh; border-right: none; border-top: 1px solid #444; border-radius: 20px 20px 0 0; transform: translateY(calc(75vh - 60px)); box-shadow: 0 -5px 20px rgba(0,0,0,0.5); }
             #sidebar.expanded { transform: translateY(0); }
             .mobile-handle { display: block !important; width: 100%; height: 60px; background: #2a2a32; text-align: center; line-height: 60px; cursor: pointer; border-radius: 20px 20px 0 0; }
             .handle-bar { width: 40px; height: 5px; background: #666; border-radius: 10px; display: inline-block; margin-top: 15px; }
@@ -35,18 +29,22 @@
         .section { padding:15px; border-bottom:1px solid #333; }
         .vacation-item { padding:12px; background:#2a2a32; margin-bottom:8px; border-radius:8px; cursor:pointer; display:flex; justify-content:space-between; align-items: center; border-left: 6px solid transparent; }
         .active-trip { border-left: 6px solid var(--accent); background:#3a3a45; }
-        .saved-place { padding:12px 0; border-bottom:1px solid #222; }
-        .place-info b { display:block; color:#fff; font-size: 1.1em; }
-        .place-meta { font-size: 11px; color: #888; margin-top: 3px; line-height: 1.4; }
-        .note-preview { font-size: 11px; color: #aaa; margin-top: 6px; font-style: italic; border-left: 2px solid #444; padding-left: 8px; }
-        .pin-links { display:flex; flex-wrap: wrap; gap:8px; margin-top:10px; }
-        .pin-links a { color:var(--accent); text-decoration:none; font-size:0.7em; font-weight:bold; text-transform:uppercase; border: 1px solid #444; padding: 5px 10px; border-radius: 4px; }
-        .category-header { font-size:10px; text-transform:uppercase; color:#888; margin-top:15px; font-weight:bold; border-bottom: 1px dotted #444; padding-bottom: 4px; }
+        .saved-place { padding:8px 0; border-bottom:1px solid #222; }
+        
+        .name-todo { color: var(--todo) !important; }
+        .name-stay { color: var(--stay) !important; }
+        .name-eat { color: var(--eat) !important; }
+
+        .place-info b { display:block; font-size: 1.05em; }
+        .note-preview { font-size: 11px; color: #888; margin-top: 4px; font-style: italic; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .pin-links { display:flex; flex-wrap: wrap; gap:6px; margin-top:8px; }
+        .pin-links a { color:var(--accent); text-decoration:none; font-size:0.65em; font-weight:bold; text-transform:uppercase; border: 1px solid #444; padding: 4px 8px; border-radius: 4px; }
+        .category-header { font-size:10px; text-transform:uppercase; color:#888; margin-top:12px; font-weight:bold; border-bottom: 1px dotted #444; padding-bottom: 4px; }
         .form-overlay { display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:#25252b; padding:20px; border-radius:12px; z-index:999; width:85%; max-width:350px; box-shadow: 0 0 30px rgba(0,0,0,0.5); }
         input, textarea, select { width:100%; margin-bottom:10px; background:#121212; color:white; border:1px solid #444; padding:12px; border-radius:6px; box-sizing:border-box; font-size: 16px; }
         button.primary { width:100%; padding:12px; background:var(--accent); border:none; color:white; font-weight:bold; cursor:pointer; border-radius:6px; }
         .icon-btn { background:none; border:none; color:#666; cursor:pointer; font-size:1em; padding:4px; }
-        .gps-btn { position: absolute; bottom: 85px; right: 20px; background: white; width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 15px rgba(0,0,0,0.4); z-index: 5; cursor: pointer; font-size: 20px; }
+        .gps-btn { position: absolute; bottom: 85px; right: 20px; background: white; width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 -5px 15px rgba(0,0,0,0.4); z-index: 5; cursor: pointer; font-size: 20px; }
     </style>
 </head>
 <body>
@@ -75,7 +73,7 @@
     <input id="pAddress" placeholder="ADDRESS" />
     <input id="pPhone" placeholder="PHONE NUMBER" />
     <input id="pLink" placeholder="WEBSITE URL" />
-    <textarea id="pNotes" placeholder="NOTES..."></textarea>
+    <input id="pgUrl" type="hidden" /> <textarea id="pNotes" placeholder="NOTES..."></textarea>
     <select id="pType">
         <option value="🔴 Things to Do">🔴 Things to Do</option>
         <option value="🟢 Places to Stay">🟢 Places to Stay</option>
@@ -116,7 +114,7 @@ function initMap() {
     map.addListener('click', (e) => {
         if (e.placeId) {
             e.stop();
-            service.getDetails({ placeId: e.placeId, fields: ['name', 'formatted_address', 'geometry', 'website', 'formatted_phone_number'] }, (p, s) => { 
+            service.getDetails({ placeId: e.placeId, fields: ['name', 'formatted_address', 'geometry', 'website', 'formatted_phone_number', 'url'] }, (p, s) => { 
                 if (s === 'OK') showLandmarkPopup(p); 
             });
         } else { openModal(e.latLng.lat(), e.latLng.lng()); }
@@ -136,7 +134,7 @@ function addTrip() {
 function savePin() {
     if (!activeTrip) return alert("Select folder!");
     const pinId = editingPinId || Date.now();
-    const pinData = { id: pinId, lat: pendingCoords.lat, lng: pendingCoords.lng, name: document.getElementById('pName').value, address: document.getElementById('pAddress').value, phone: document.getElementById('pPhone').value, link: document.getElementById('pLink').value, notes: document.getElementById('pNotes').value, type: document.getElementById('pType').value };
+    const pinData = { id: pinId, lat: pendingCoords.lat, lng: pendingCoords.lng, name: document.getElementById('pName').value, address: document.getElementById('pAddress').value, phone: document.getElementById('pPhone').value, link: document.getElementById('pLink').value, gUrl: document.getElementById('pgUrl').value, notes: document.getElementById('pNotes').value, type: document.getElementById('pType').value };
     db.ref(`trips/${activeTrip}/pins/${pinId}`).set(pinData).then(() => closeModal());
 }
 
@@ -144,18 +142,14 @@ function displayMarker(pin) {
     let pinColor = pin.type.includes("🔴") ? "#e74c3c" : pin.type.includes("🟢") ? "#27ae60" : "#f1c40f";
     const marker = new google.maps.Marker({ map, position: {lat: parseFloat(pin.lat), lng: parseFloat(pin.lng)}, icon: { path: "M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z", fillColor: pinColor, fillOpacity: 1, strokeColor: "#ffffff", strokeWeight: 2, scale: 1.5, anchor: new google.maps.Point(12, 22) } });
     marker.addListener('click', () => {
-        const mU = `https://www.google.com/maps/search/?api=1&query=${pin.lat},${pin.lng}`;
+        const mU = pin.gUrl || `https://www.google.com/maps/search/?api=1&query=${pin.lat},${pin.lng}`;
         const dU = `https://www.google.com/maps/dir/?api=1&destination=${pin.lat},${pin.lng}`;
-        const phoneHtml = pin.phone ? `<a href="tel:${pin.phone}" style="color:var(--accent); text-decoration:none; font-size:12px; display:block; margin:5px 0;">📞 ${pin.phone}</a>` : '';
-        const webHtml = pin.link ? `<a href="${pin.link}" target="_blank" style="color:var(--accent); text-decoration:none; font-size:12px; display:block; margin:5px 0;">🌐 VISIT WEBSITE</a>` : '';
         
         infoWindow.setContent(`
             <div style="color:#222; padding:5px; min-width:180px; font-family:sans-serif;">
                 <b>${pin.name}</b>
-                ${phoneHtml}
-                ${webHtml}
-                <p style="font-size:11px; color:#666; margin:5px 0;">${pin.address || ''}</p>
-                <div style="display:flex; gap:10px; margin-top:8px;">
+                <div style="font-size:11px; color:#666; margin:4px 0;">${pin.address || ''}</div>
+                <div style="display:flex; gap:10px; margin-top:8px; border-top:1px solid #eee; padding-top:8px;">
                     <a href="${mU}" target="_blank" style="font-size:10px; font-weight:bold; color:var(--accent); text-decoration:none;">MAP</a>
                     <a href="${dU}" target="_blank" style="font-size:10px; font-weight:bold; color:var(--accent); text-decoration:none;">DIRECTIONS</a>
                 </div>
@@ -173,19 +167,19 @@ function renderList() {
     ['🔴 Things to Do', '🟢 Places to Stay', '🟡 Places to Eat'].forEach(cat => {
         const items = pinArray.filter(p => p.type === cat); if (!items.length) return;
         el.innerHTML += `<div class='category-header'>${cat}</div>`;
+        const colorClass = cat.includes("🔴") ? "name-todo" : cat.includes("🟢") ? "name-stay" : "name-eat";
+        
         items.forEach(p => {
-            const mU = `https://www.google.com/maps/search/?api=1&query=${p.lat},${p.lng}`;
+            const mU = p.gUrl || `https://www.google.com/maps/search/?api=1&query=${p.lat},${p.lng}`;
             const dU = `https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}`;
             el.innerHTML += `
                 <div class='saved-place'>
-                    <div class='place-row'>
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start;">
                         <div class='place-info' onclick='event.stopPropagation(); map.setCenter({lat:${p.lat},lng:${p.lng}}); map.setZoom(16); document.getElementById("sidebar").classList.remove("expanded");'>
-                            <b>${p.name}</b>
-                            <div class="place-meta">${p.address || ''}</div>
-                            ${p.phone ? `<div class="place-meta" style="color:var(--accent)">📞 ${p.phone}</div>` : ''}
+                            <b class="${colorClass}">${p.name}</b>
                             ${p.notes ? `<div class="note-preview">${p.notes}</div>` : ''}
                         </div>
-                        <div style="display:flex; gap:5px;">
+                        <div style="display:flex; gap:2px;">
                             <button class='icon-btn' onclick='event.stopPropagation(); editPin("${p.id}")'>✏️</button>
                             <button class='icon-btn' style='color:var(--danger)' onclick='event.stopPropagation(); deletePin("${p.id}")'>×</button>
                         </div>
@@ -214,22 +208,16 @@ function loadTrip(key) { activeTrip = key; document.getElementById('activeTripTi
 
 function showLandmarkPopup(place) {
     const lat = place.geometry.location.lat(), lng = place.geometry.location.lng();
-    const website = place.website || '';
-    const phone = place.formatted_phone_number || '';
-    const address = place.formatted_address || '';
+    const gMapsUrl = place.url || `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
     
-    // UI REVISION: Display website and phone directly in the click popup
-    const websiteHtml = website ? `<a href="${website}" target="_blank" style="color:var(--accent); font-weight:bold; font-size:11px; display:block; margin:4px 0;">🌐 VISIT WEBSITE</a>` : '';
-    const phoneHtml = phone ? `<div style="font-size:11px; color:#444; margin-bottom:2px;">📞 ${phone}</div>` : '';
-
     infoWindow.setContent(`
         <div style="color:#222; min-width:180px; font-family:sans-serif; padding:5px;">
             <b style="font-size:14px; display:block; margin-bottom:4px;">${place.name}</b>
-            <div style="font-size:11px; color:#666; margin-bottom:2px;">📍 ${address}</div>
-            ${phoneHtml}
-            ${websiteHtml}
-            <button onclick="openModal(${lat},${lng},'${place.name.replace(/'/g, "\\'")}','${address.replace(/'/g, "\\'")}','','${website}','${phone}')" 
-                style="width:100%; background:var(--accent); color:white; border:none; padding:10px; border-radius:4px; margin-top:10px; font-weight:bold; cursor:pointer;">
+            <div style="font-size:11px; color:#666; margin-bottom:4px;">📍 ${place.formatted_address || ''}</div>
+            <a href="${gMapsUrl}" target="_blank" style="color:var(--accent); font-weight:bold; font-size:11px; text-decoration:none; display:block; margin-bottom:10px;">➔ VIEW REVIEWS & PHOTOS</a>
+            
+            <button onclick="openModal(${lat},${lng},'${place.name.replace(/'/g, "\\'")}','${(place.formatted_address || '').replace(/'/g, "\\'")}','','${place.website || ''}','${place.formatted_phone_number || ''}','${gMapsUrl}')" 
+                style="width:100%; background:var(--accent); color:white; border:none; padding:10px; border-radius:4px; font-weight:bold; cursor:pointer;">
                 PIN THIS PLACE
             </button>
         </div>`);
@@ -237,16 +225,20 @@ function showLandmarkPopup(place) {
     if(window.innerWidth <= 768) document.getElementById('sidebar').classList.remove('expanded');
 }
 
-function openModal(lat, lng, name = '', address = '', id = '', website = '', phone = '') {
+function openModal(lat, lng, name = '', address = '', id = '', website = '', phone = '', gUrl = '') {
     if (!activeTrip) return alert('Select folder!');
     pendingCoords = { lat, lng }; editingPinId = id;
-    document.getElementById('pName').value = name; document.getElementById('pAddress').value = address; document.getElementById('pPhone').value = phone; document.getElementById('pLink').value = website;
+    document.getElementById('pName').value = name; 
+    document.getElementById('pAddress').value = address; 
+    document.getElementById('pPhone').value = phone; 
+    document.getElementById('pLink').value = website;
+    document.getElementById('pgUrl').value = gUrl; // Store Deep Link
     if (!id) { document.getElementById('pNotes').value = ''; document.getElementById('pType').value = '🔴 Things to Do'; }
     document.getElementById('modalTitle').innerText = id ? "EDIT PIN" : "ADD PIN";
     document.getElementById('pinModal').style.display = 'block';
 }
 
-function editPin(id) { const pin = trips[activeTrip].pins[id]; document.getElementById('pNotes').value = pin.notes || ''; document.getElementById('pType').value = pin.type; openModal(pin.lat, pin.lng, pin.name, pin.address, pin.id, pin.link, pin.phone); }
+function editPin(id) { const pin = trips[activeTrip].pins[id]; document.getElementById('pNotes').value = pin.notes || ''; document.getElementById('pType').value = pin.type; openModal(pin.lat, pin.lng, pin.name, pin.address, pin.id, pin.link, pin.phone, pin.gUrl); }
 function deleteTrip(key) { if (confirm(`Delete?`)) { db.ref(`trips/${key}`).remove(); if (activeTrip === key) activeTrip = null; } }
 function deletePin(id) { db.ref(`trips/${activeTrip}/pins/${id}`).remove(); }
 function closeModal() { document.getElementById('pinModal').style.display = 'none'; }
