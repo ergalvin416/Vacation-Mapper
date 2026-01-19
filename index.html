@@ -3,14 +3,14 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>Vacation Mapper V56</title>
+    <title>Vacation Mapper V57</title>
 
     <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyC78EKBgSd2UsLSPUTGO1A-MF78BU20aLg&libraries=places"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
 
     <style>
-        :root { --bg:#1e1e24; --panel:#16161c; --accent:#4a90e2; --text:#eee; --danger:#e74c3c; --todo:#e74c3c; --stay:#27ae60; --eat:#f1c40f; }
+        :root { --bg:#1e1e24; --panel:#16161c; --accent:#4a90e2; --text:#eee; --danger:#e74c3c; --todo:#e74c3c; --stay:#27ae60; --eat:#f1c40f; --yelp:#d32323; }
         body { margin:0; display:flex; height:100vh; font-family:-apple-system,sans-serif; background:#121212; color:var(--text); overflow:hidden; }
         #container { display:flex; width:100%; height:100%; flex-direction: row; }
         #sidebar { width:350px; background:var(--bg); border-right:1px solid #333; display:flex; flex-direction:column; overflow-y:auto; z-index: 10; transition: transform 0.3s ease; }
@@ -74,7 +74,7 @@
     <input id="pPhone" placeholder="PHONE NUMBER" />
     <input id="pLink" placeholder="WEBSITE URL" />
     <input id="pgUrl" type="hidden" />
-    <textarea id="pNotes" placeholder="NOTES..."></textarea>
+    <input id="pyUrl" type="hidden" /> <textarea id="pNotes" placeholder="NOTES..."></textarea>
     <select id="pType">
         <option value="🔴 Things to Do">🔴 Things to Do</option>
         <option value="🟢 Places to Stay">🟢 Places to Stay</option>
@@ -101,16 +101,7 @@ const db = firebase.database();
 let map, service, infoWindow, autocomplete, trips = {}, activeTrip = null, markers = [], pendingCoords = null, editingPinId = null;
 
 function initMap() {
-    // REVISED: Added tilt:0 to stop auto-tilting
-    map = new google.maps.Map(document.getElementById('map'), { 
-        center:{lat:39.8,lng:-98.5}, 
-        zoom:4, 
-        mapTypeId:'hybrid', 
-        clickableIcons:true, 
-        mapTypeControl:false, 
-        streetViewControl:false,
-        tilt: 0 // Explicitly disable tilt imagery
-    });
+    map = new google.maps.Map(document.getElementById('map'), { center:{lat:39.8,lng:-98.5}, zoom:4, mapTypeId:'hybrid', clickableIcons:true, mapTypeControl:false, streetViewControl:false, tilt: 0 });
     service = new google.maps.places.PlacesService(map);
     infoWindow = new google.maps.InfoWindow();
     autocomplete = new google.maps.places.Autocomplete(document.getElementById('search-box'));
@@ -144,7 +135,7 @@ function addTrip() {
 function savePin() {
     if (!activeTrip) return alert("Select folder!");
     const pinId = editingPinId || Date.now();
-    const pinData = { id: pinId, lat: pendingCoords.lat, lng: pendingCoords.lng, name: document.getElementById('pName').value, address: document.getElementById('pAddress').value, phone: document.getElementById('pPhone').value, link: document.getElementById('pLink').value, gUrl: document.getElementById('pgUrl').value, notes: document.getElementById('pNotes').value, type: document.getElementById('pType').value };
+    const pinData = { id: pinId, lat: pendingCoords.lat, lng: pendingCoords.lng, name: document.getElementById('pName').value, address: document.getElementById('pAddress').value, phone: document.getElementById('pPhone').value, link: document.getElementById('pLink').value, gUrl: document.getElementById('pgUrl').value, yUrl: document.getElementById('pyUrl').value, notes: document.getElementById('pNotes').value, type: document.getElementById('pType').value };
     db.ref(`trips/${activeTrip}/pins/${pinId}`).set(pinData).then(() => closeModal());
 }
 
@@ -154,11 +145,13 @@ function displayMarker(pin) {
     marker.addListener('click', () => {
         const mU = pin.gUrl || `https://www.google.com/maps/search/?api=1&query=${pin.lat},${pin.lng}`;
         const dU = `https://www.google.com/maps/dir/?api=1&destination=${pin.lat},${pin.lng}`;
+        const yU = pin.yUrl || '';
         
         infoWindow.setContent(`
             <div style="color:#222; padding:5px; min-width:180px; font-family:sans-serif;">
                 <b>${pin.name}</b>
                 <div style="font-size:11px; color:#666; margin:4px 0;">${pin.address || ''}</div>
+                ${yU ? `<a href="${yU}" target="_blank" style="color:var(--yelp); font-size:10px; font-weight:bold; text-decoration:none; display:block; margin-bottom:5px;">➔ YELP REVIEWS</a>` : ''}
                 <div style="display:flex; gap:10px; margin-top:8px; border-top:1px solid #eee; padding-top:8px;">
                     <a href="${mU}" target="_blank" style="font-size:10px; font-weight:bold; color:var(--accent); text-decoration:none;">MAP</a>
                     <a href="${dU}" target="_blank" style="font-size:10px; font-weight:bold; color:var(--accent); text-decoration:none;">DIRECTIONS</a>
@@ -197,8 +190,8 @@ function renderList() {
                     <div class="pin-links" onclick="event.stopPropagation()">
                         <a href="${mU}" target="_blank">MAP</a>
                         <a href="${dU}" target="_blank">DIRECTIONS</a>
+                        ${p.yUrl ? `<a href="${p.yUrl}" target="_blank" style="color:var(--yelp)">YELP</a>` : ''}
                         ${p.link ? `<a href="${p.link}" target="_blank">WEB</a>` : ''}
-                        ${p.phone ? `<a href="tel:${p.phone}">CALL</a>` : ''}
                     </div>
                 </div>`;
         });
@@ -220,13 +213,19 @@ function showLandmarkPopup(place) {
     const lat = place.geometry.location.lat(), lng = place.geometry.location.lng();
     const gMapsUrl = place.url || `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
     
+    // Programmatic Yelp Search Link
+    const yelpUrl = `https://www.yelp.com/search?find_desc=${encodeURIComponent(place.name)}&find_loc=${encodeURIComponent(place.formatted_address)}`;
+    
     infoWindow.setContent(`
         <div style="color:#222; min-width:180px; font-family:sans-serif; padding:5px;">
             <b style="font-size:14px; display:block; margin-bottom:4px;">${place.name}</b>
             <div style="font-size:11px; color:#666; margin-bottom:4px;">📍 ${place.formatted_address || ''}</div>
-            <a href="${gMapsUrl}" target="_blank" style="color:var(--accent); font-weight:bold; font-size:11px; text-decoration:none; display:block; margin-bottom:10px;">➔ VIEW REVIEWS & PHOTOS</a>
+            <div style="display:flex; flex-direction:column; gap:6px; margin-bottom:12px;">
+                <a href="${gMapsUrl}" target="_blank" style="color:var(--accent); font-weight:bold; font-size:11px; text-decoration:none;">➔ REVIEWS & PHOTOS</a>
+                <a href="${yelpUrl}" target="_blank" style="color:var(--yelp); font-weight:bold; font-size:11px; text-decoration:none;">➔ SEARCH ON YELP</a>
+            </div>
             
-            <button onclick="openModal(${lat},${lng},'${place.name.replace(/'/g, "\\'")}','${(place.formatted_address || '').replace(/'/g, "\\'")}','','${place.website || ''}','${place.formatted_phone_number || ''}','${gMapsUrl}')" 
+            <button onclick="openModal(${lat},${lng},'${place.name.replace(/'/g, "\\'")}','${(place.formatted_address || '').replace(/'/g, "\\'")}','','${place.website || ''}','${place.formatted_phone_number || ''}','${gMapsUrl}','${yelpUrl}')" 
                 style="width:100%; background:var(--accent); color:white; border:none; padding:10px; border-radius:4px; font-weight:bold; cursor:pointer;">
                 PIN THIS PLACE
             </button>
@@ -235,7 +234,7 @@ function showLandmarkPopup(place) {
     if(window.innerWidth <= 768) document.getElementById('sidebar').classList.remove('expanded');
 }
 
-function openModal(lat, lng, name = '', address = '', id = '', website = '', phone = '', gUrl = '') {
+function openModal(lat, lng, name = '', address = '', id = '', website = '', phone = '', gUrl = '', yUrl = '') {
     if (!activeTrip) return alert('Select folder!');
     pendingCoords = { lat, lng }; editingPinId = id;
     document.getElementById('pName').value = name; 
@@ -243,12 +242,13 @@ function openModal(lat, lng, name = '', address = '', id = '', website = '', pho
     document.getElementById('pPhone').value = phone; 
     document.getElementById('pLink').value = website;
     document.getElementById('pgUrl').value = gUrl;
+    document.getElementById('pyUrl').value = yUrl; // Store Yelp Search Link
     if (!id) { document.getElementById('pNotes').value = ''; document.getElementById('pType').value = '🔴 Things to Do'; }
     document.getElementById('modalTitle').innerText = id ? "EDIT PIN" : "ADD PIN";
     document.getElementById('pinModal').style.display = 'block';
 }
 
-function editPin(id) { const pin = trips[activeTrip].pins[id]; document.getElementById('pNotes').value = pin.notes || ''; document.getElementById('pType').value = pin.type; openModal(pin.lat, pin.lng, pin.name, pin.address, pin.id, pin.link, pin.phone, pin.gUrl); }
+function editPin(id) { const pin = trips[activeTrip].pins[id]; document.getElementById('pNotes').value = pin.notes || ''; document.getElementById('pType').value = pin.type; openModal(pin.lat, pin.lng, pin.name, pin.address, pin.id, pin.link, pin.phone, pin.gUrl, pin.yUrl); }
 function deleteTrip(key) { if (confirm(`Delete?`)) { db.ref(`trips/${key}`).remove(); if (activeTrip === key) activeTrip = null; } }
 function deletePin(id) { db.ref(`trips/${activeTrip}/pins/${id}`).remove(); }
 function closeModal() { document.getElementById('pinModal').style.display = 'none'; }
