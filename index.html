@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>Vacation Mapper V55</title>
+    <title>Vacation Mapper V56</title>
 
     <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyC78EKBgSd2UsLSPUTGO1A-MF78BU20aLg&libraries=places"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
@@ -73,7 +73,8 @@
     <input id="pAddress" placeholder="ADDRESS" />
     <input id="pPhone" placeholder="PHONE NUMBER" />
     <input id="pLink" placeholder="WEBSITE URL" />
-    <input id="pgUrl" type="hidden" /> <textarea id="pNotes" placeholder="NOTES..."></textarea>
+    <input id="pgUrl" type="hidden" />
+    <textarea id="pNotes" placeholder="NOTES..."></textarea>
     <select id="pType">
         <option value="🔴 Things to Do">🔴 Things to Do</option>
         <option value="🟢 Places to Stay">🟢 Places to Stay</option>
@@ -100,7 +101,16 @@ const db = firebase.database();
 let map, service, infoWindow, autocomplete, trips = {}, activeTrip = null, markers = [], pendingCoords = null, editingPinId = null;
 
 function initMap() {
-    map = new google.maps.Map(document.getElementById('map'), { center:{lat:39.8,lng:-98.5}, zoom:4, mapTypeId:'hybrid', clickableIcons:true, mapTypeControl:false, streetViewControl:false });
+    // REVISED: Added tilt:0 to stop auto-tilting
+    map = new google.maps.Map(document.getElementById('map'), { 
+        center:{lat:39.8,lng:-98.5}, 
+        zoom:4, 
+        mapTypeId:'hybrid', 
+        clickableIcons:true, 
+        mapTypeControl:false, 
+        streetViewControl:false,
+        tilt: 0 // Explicitly disable tilt imagery
+    });
     service = new google.maps.places.PlacesService(map);
     infoWindow = new google.maps.InfoWindow();
     autocomplete = new google.maps.places.Autocomplete(document.getElementById('search-box'));
@@ -232,7 +242,7 @@ function openModal(lat, lng, name = '', address = '', id = '', website = '', pho
     document.getElementById('pAddress').value = address; 
     document.getElementById('pPhone').value = phone; 
     document.getElementById('pLink').value = website;
-    document.getElementById('pgUrl').value = gUrl; // Store Deep Link
+    document.getElementById('pgUrl').value = gUrl;
     if (!id) { document.getElementById('pNotes').value = ''; document.getElementById('pType').value = '🔴 Things to Do'; }
     document.getElementById('modalTitle').innerText = id ? "EDIT PIN" : "ADD PIN";
     document.getElementById('pinModal').style.display = 'block';
