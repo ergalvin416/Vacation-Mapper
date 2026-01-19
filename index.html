@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>Vacation Mapper V58</title>
+    <title>Vacation Mapper V59</title>
 
     <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyC78EKBgSd2UsLSPUTGO1A-MF78BU20aLg&libraries=places"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
@@ -13,16 +13,24 @@
         :root { --bg:#1e1e24; --panel:#16161c; --accent:#4a90e2; --text:#eee; --danger:#e74c3c; --todo:#e74c3c; --stay:#27ae60; --eat:#f1c40f; }
         body { margin:0; display:flex; height:100vh; font-family:-apple-system,sans-serif; background:#121212; color:var(--text); overflow:hidden; }
         #container { display:flex; width:100%; height:100%; flex-direction: row; }
-        #sidebar { width:350px; background:var(--bg); border-right:1px solid #333; display:flex; flex-direction:column; overflow-y:auto; z-index: 10; transition: transform 0.3s ease; }
+        
+        #sidebar { width:350px; background:var(--bg); border-right:1px solid #333; display:flex; flex-direction:column; overflow-y:auto; z-index: 10; transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
         #map { flex:1; position: relative; }
         
         @media (max-width: 768px) {
             #container { flex-direction: column; }
             #map { height: 100vh; width: 100%; position: absolute; top:0; left:0; }
-            #sidebar { position: fixed; bottom: 0; left: 0; width: 100%; height: 75vh; border-right: none; border-top: 1px solid #444; border-radius: 20px 20px 0 0; transform: translateY(calc(75vh - 60px)); box-shadow: 0 -5px 20px rgba(0,0,0,0.5); }
+            #sidebar { 
+                position: fixed; bottom: 0; left: 0; width: 100%; height: 80vh; 
+                border-right: none; border-top: 1px solid #444; border-radius: 20px 20px 0 0;
+                transform: translateY(calc(80vh - 70px)); /* Handle height + padding visible */
+                box-shadow: 0 -5px 25px rgba(0,0,0,0.6);
+                touch-action: pan-y; /* Enable native scrolling but allow us to intercept swipes */
+            }
             #sidebar.expanded { transform: translateY(0); }
-            .mobile-handle { display: block !important; width: 100%; height: 60px; background: #2a2a32; text-align: center; line-height: 60px; cursor: pointer; border-radius: 20px 20px 0 0; }
-            .handle-bar { width: 40px; height: 5px; background: #666; border-radius: 10px; display: inline-block; margin-top: 15px; }
+            .mobile-handle { display: flex !important; flex-direction: column; align-items: center; justify-content: center; width: 100%; height: 70px; background: #2a2a32; cursor: pointer; border-radius: 20px 20px 0 0; flex-shrink: 0; position: sticky; top: 0; z-index: 15; }
+            .handle-bar { width: 45px; height: 6px; background: #555; border-radius: 10px; margin-bottom: 5px; }
+            .handle-text { font-size: 10px; font-weight: bold; color: #888; text-transform: uppercase; }
         }
 
         .mobile-handle { display: none; }
@@ -30,11 +38,9 @@
         .vacation-item { padding:12px; background:#2a2a32; margin-bottom:8px; border-radius:8px; cursor:pointer; display:flex; justify-content:space-between; align-items: center; border-left: 6px solid transparent; }
         .active-trip { border-left: 6px solid var(--accent); background:#3a3a45; }
         .saved-place { padding:8px 0; border-bottom:1px solid #222; }
-        
         .name-todo { color: var(--todo) !important; }
         .name-stay { color: var(--stay) !important; }
         .name-eat { color: var(--eat) !important; }
-
         .place-info b { display:block; font-size: 1.05em; }
         .note-preview { font-size: 11px; color: #888; margin-top: 4px; font-style: italic; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .pin-links { display:flex; flex-wrap: wrap; gap:6px; margin-top:8px; }
@@ -44,21 +50,21 @@
         input, textarea, select { width:100%; margin-bottom:10px; background:#121212; color:white; border:1px solid #444; padding:12px; border-radius:6px; box-sizing:border-box; font-size: 16px; }
         button.primary { width:100%; padding:12px; background:var(--accent); border:none; color:white; font-weight:bold; cursor:pointer; border-radius:6px; }
         .icon-btn { background:none; border:none; color:#666; cursor:pointer; font-size:1em; padding:4px; }
-        .gps-btn { position: absolute; bottom: 85px; right: 20px; background: white; width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 -5px 15px rgba(0,0,0,0.4); z-index: 5; cursor: pointer; font-size: 20px; }
+        .gps-btn { position: absolute; bottom: 90px; right: 20px; background: white; width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 -5px 15px rgba(0,0,0,0.4); z-index: 5; cursor: pointer; font-size: 20px; }
     </style>
 </head>
 <body>
 
 <div id="container">
-    <div id="sidebar" onclick="toggleSidebar(event)">
-        <div class="mobile-handle"><div class="handle-bar"></div></div>
+    <div id="sidebar">
+        <div class="mobile-handle" id="sheetHandle"><div class="handle-bar"></div><div class="handle-text">Swipe or Tap to View Pins</div></div>
         <div class="section">
             <h3 style="margin-top:0;">🌍 SHARED VACATIONS</h3>
-            <input id="tripName" placeholder="NEW TRIP NAME..." onclick="event.stopPropagation()" />
-            <button class="primary" onclick="event.stopPropagation(); addTrip()">CREATE FOLDER</button>
+            <input id="tripName" placeholder="NEW TRIP NAME..." />
+            <button class="primary" onclick="addTrip()">CREATE FOLDER</button>
             <div id="tripList" style="margin-top:10px"></div>
         </div>
-        <div class="section"><input id="search-box" placeholder="🔍 SEARCH PLACES..." onclick="event.stopPropagation()" /></div>
+        <div class="section"><input id="search-box" placeholder="🔍 SEARCH PLACES..." /></div>
         <div class="section" id="place-details">
             <h4 id="activeTripTitle" style="color:var(--accent); margin-top:0;">SAVED PINS</h4>
             <div id="groupedList"></div>
@@ -74,7 +80,7 @@
     <input id="pPhone" placeholder="PHONE NUMBER" />
     <input id="pLink" placeholder="WEBSITE URL" />
     <input id="pgUrl" type="hidden" />
-    <input id="pyUrl" type="hidden" /> 
+    <input id="pyUrl" type="hidden" />
     <textarea id="pNotes" placeholder="NOTES..."></textarea>
     <select id="pType">
         <option value="🔴 Things to Do">🔴 Things to Do</option>
@@ -101,18 +107,24 @@ const db = firebase.database();
 
 let map, service, infoWindow, autocomplete, trips = {}, activeTrip = null, markers = [], pendingCoords = null, editingPinId = null;
 
+// Swipe Logic State
+let touchStartY = 0;
+let touchEndY = 0;
+
 function initMap() {
     map = new google.maps.Map(document.getElementById('map'), { center:{lat:39.8,lng:-98.5}, zoom:4, mapTypeId:'hybrid', clickableIcons:true, mapTypeControl:false, streetViewControl:false, tilt: 0 });
     service = new google.maps.places.PlacesService(map);
     infoWindow = new google.maps.InfoWindow();
     autocomplete = new google.maps.places.Autocomplete(document.getElementById('search-box'));
+    
     autocomplete.addListener('place_changed', () => { 
         const p = autocomplete.getPlace(); 
         if (p.geometry) { 
             map.setCenter(p.geometry.location); map.setZoom(16);
-            if(window.innerWidth <= 768) document.getElementById('sidebar').classList.remove('expanded');
+            setSheetState(false);
         } 
     });
+
     map.addListener('click', (e) => {
         if (e.placeId) {
             e.stop();
@@ -121,11 +133,45 @@ function initMap() {
             });
         } else { openModal(e.latLng.lat(), e.latLng.lng()); }
     });
+
     db.ref('trips').on('value', (s) => { trips = s.val() || {}; renderTrips(); if (activeTrip) loadTrip(activeTrip); });
+
+    initGestures();
 }
 
-function toggleSidebar(e) { if (window.innerWidth <= 768) document.getElementById('sidebar').classList.toggle('expanded'); }
+// --- NEW GESTURE & SHEET LOGIC ---
+function initGestures() {
+    const handle = document.getElementById('sheetHandle');
+    const sidebar = document.getElementById('sidebar');
 
+    handle.addEventListener('click', () => {
+        const isExpanded = sidebar.classList.contains('expanded');
+        setSheetState(!isExpanded);
+    });
+
+    sidebar.addEventListener('touchstart', (e) => { touchStartY = e.touches[0].screenY; }, {passive: true});
+    sidebar.addEventListener('touchend', (e) => {
+        touchEndY = e.changedTouches[0].screenY;
+        const diff = touchStartY - touchEndY;
+        if (Math.abs(diff) > 50) { // Threshold for swipe
+            if (diff > 0) setSheetState(true);  // Swipe Up
+            else setSheetState(false);          // Swipe Down
+        }
+    }, {passive: true});
+}
+
+function setSheetState(isExpanded) {
+    if (window.innerWidth > 768) return;
+    const sidebar = document.getElementById('sidebar');
+    if (isExpanded) {
+        sidebar.classList.add('expanded');
+    } else {
+        sidebar.classList.remove('expanded');
+        sidebar.scrollTop = 0; // Ensures handle is never lost
+    }
+}
+
+// --- SHARED FUNCTIONS ---
 function addTrip() {
     const input = document.getElementById('tripName');
     const n = input.value.trim(); if (!n) return;
@@ -147,19 +193,9 @@ function displayMarker(pin) {
         const mU = pin.gUrl || `https://www.google.com/maps/search/?api=1&query=${pin.lat},${pin.lng}`;
         const dU = `https://www.google.com/maps/dir/?api=1&destination=${pin.lat},${pin.lng}`;
         const yU = pin.yUrl || '';
-        
-        infoWindow.setContent(`
-            <div style="color:#222; padding:5px; min-width:180px; font-family:sans-serif;">
-                <b>${pin.name}</b>
-                <div style="font-size:11px; color:#666; margin:4px 0;">${pin.address || ''}</div>
-                ${yU ? `<a href="${yU}" target="_blank" style="color:var(--accent); font-size:10px; font-weight:bold; text-decoration:none; display:block; margin-bottom:5px;">➔ YELP REVIEWS</a>` : ''}
-                <div style="display:flex; gap:10px; margin-top:8px; border-top:1px solid #eee; padding-top:8px;">
-                    <a href="${mU}" target="_blank" style="font-size:10px; font-weight:bold; color:var(--accent); text-decoration:none;">MAP</a>
-                    <a href="${dU}" target="_blank" style="font-size:10px; font-weight:bold; color:var(--accent); text-decoration:none;">DIRECTIONS</a>
-                </div>
-            </div>`);
+        infoWindow.setContent(`<div style="color:#222; padding:5px; min-width:180px; font-family:sans-serif;"><b>${pin.name}</b><div style="font-size:11px; color:#666; margin:4px 0;">${pin.address || ''}</div>${yU ? `<a href="${yU}" target="_blank" style="color:var(--accent); font-size:10px; font-weight:bold; text-decoration:none; display:block; margin-bottom:5px;">➔ YELP REVIEWS</a>` : ''}<div style="display:flex; gap:10px; margin-top:8px; border-top:1px solid #eee; padding-top:8px;"><a href="${mU}" target="_blank" style="font-size:10px; font-weight:bold; color:var(--accent); text-decoration:none;">MAP</a><a href="${dU}" target="_blank" style="font-size:10px; font-weight:bold; color:var(--accent); text-decoration:none;">DIRECTIONS</a></div></div>`);
         infoWindow.open(map, marker);
-        if(window.innerWidth <= 768) document.getElementById('sidebar').classList.remove('expanded');
+        setSheetState(false);
     });
     markers.push(marker);
 }
@@ -172,29 +208,10 @@ function renderList() {
         const items = pinArray.filter(p => p.type === cat); if (!items.length) return;
         el.innerHTML += `<div class='category-header'>${cat}</div>`;
         const colorClass = cat.includes("🔴") ? "name-todo" : cat.includes("🟢") ? "name-stay" : "name-eat";
-        
         items.forEach(p => {
             const mU = p.gUrl || `https://www.google.com/maps/search/?api=1&query=${p.lat},${p.lng}`;
             const dU = `https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}`;
-            el.innerHTML += `
-                <div class='saved-place'>
-                    <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-                        <div class='place-info' onclick='event.stopPropagation(); map.setCenter({lat:${p.lat},lng:${p.lng}}); map.setZoom(16); document.getElementById("sidebar").classList.remove("expanded");'>
-                            <b class="${colorClass}">${p.name}</b>
-                            ${p.notes ? `<div class="note-preview">${p.notes}</div>` : ''}
-                        </div>
-                        <div style="display:flex; gap:2px;">
-                            <button class='icon-btn' onclick='event.stopPropagation(); editPin("${p.id}")'>✏️</button>
-                            <button class='icon-btn' style='color:var(--danger)' onclick='event.stopPropagation(); deletePin("${p.id}")'>×</button>
-                        </div>
-                    </div>
-                    <div class="pin-links" onclick="event.stopPropagation()">
-                        <a href="${mU}" target="_blank">MAP</a>
-                        <a href="${dU}" target="_blank">DIRECTIONS</a>
-                        ${p.yUrl ? `<a href="${p.yUrl}" target="_blank">YELP</a>` : ''}
-                        ${p.link ? `<a href="${p.link}" target="_blank">WEB</a>` : ''}
-                    </div>
-                </div>`;
+            el.innerHTML += `<div class='saved-place'><div style="display:flex; justify-content:space-between; align-items:flex-start;"><div class='place-info' onclick='map.setCenter({lat:${p.lat},lng:${p.lng}}); map.setZoom(16); setSheetState(false);'><b class="${colorClass}">${p.name}</b>${p.notes ? `<div class="note-preview">${p.notes}</div>` : ''}</div><div style="display:flex; gap:2px;"><button class='icon-btn' onclick='editPin("${p.id}")'>✏️</button><button class='icon-btn' style='color:var(--danger)' onclick='deletePin("${p.id}")'>×</button></div></div><div class="pin-links"><a href="${mU}" target="_blank">MAP</a><a href="${dU}" target="_blank">DIRECTIONS</a>${p.yUrl ? `<a href="${p.yUrl}" target="_blank">YELP</a>` : ''}${p.link ? `<a href="${p.link}" target="_blank">WEB</a>` : ''}</div></div>`;
         });
     });
 }
@@ -204,7 +221,7 @@ function renderTrips() {
     Object.keys(trips).forEach(k => {
         const div = document.createElement('div'); div.className = `vacation-item ${activeTrip === k ? 'active-trip' : ''}`;
         div.innerHTML = `<span>${(trips[k].name || k).toUpperCase()}</span><button class='icon-btn' onclick='event.stopPropagation(); deleteTrip("${k}")'>🗑️</button>`;
-        div.onclick = (e) => { e.stopPropagation(); loadTrip(k); }; el.appendChild(div);
+        div.onclick = () => loadTrip(k); el.appendChild(div);
     });
 }
 
@@ -214,36 +231,16 @@ function showLandmarkPopup(place) {
     const lat = place.geometry.location.lat(), lng = place.geometry.location.lng();
     const gMapsUrl = place.url || `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
     const yelpUrl = `https://www.yelp.com/search?find_desc=${encodeURIComponent(place.name)}&find_loc=${encodeURIComponent(place.formatted_address)}`; 
-    
-    infoWindow.setContent(`
-        <div style="color:#222; min-width:180px; font-family:sans-serif; padding:5px;">
-            <b style="font-size:14px; display:block; margin-bottom:4px;">${place.name}</b>
-            <div style="font-size:11px; color:#666; margin-bottom:4px;">📍 ${place.formatted_address || ''}</div>
-            <div style="display:flex; flex-direction:column; gap:6px; margin-bottom:12px;">
-                <a href="${gMapsUrl}" target="_blank" style="color:var(--accent); font-weight:bold; font-size:11px; text-decoration:none;">➔ REVIEWS & PHOTOS</a>
-                <a href="${yelpUrl}" target="_blank" style="color:var(--accent); font-weight:bold; font-size:11px; text-decoration:none;">➔ SEARCH ON YELP</a>
-            </div>
-            
-            <button onclick="openModal(${lat},${lng},'${place.name.replace(/'/g, "\\'")}','${(place.formatted_address || '').replace(/'/g, "\\'")}','','${place.website || ''}','${place.formatted_phone_number || ''}','${gMapsUrl}','${yelpUrl}')" 
-                style="width:100%; background:var(--accent); color:white; border:none; padding:10px; border-radius:4px; font-weight:bold; cursor:pointer;">
-                PIN THIS PLACE
-            </button>
-        </div>`);
+    infoWindow.setContent(`<div style="color:#222; min-width:180px; font-family:sans-serif; padding:5px;"><b style="font-size:14px; display:block; margin-bottom:4px;">${place.name}</b><div style="font-size:11px; color:#666; margin-bottom:4px;">📍 ${place.formatted_address || ''}</div><div style="display:flex; flex-direction:column; gap:6px; margin-bottom:12px;"><a href="${gMapsUrl}" target="_blank" style="color:var(--accent); font-weight:bold; font-size:11px; text-decoration:none;">➔ REVIEWS & PHOTOS</a><a href="${yelpUrl}" target="_blank" style="color:var(--accent); font-weight:bold; font-size:11px; text-decoration:none;">➔ SEARCH ON YELP</a></div><button onclick="openModal(${lat},${lng},'${place.name.replace(/'/g, "\\'")}','${(place.formatted_address || '').replace(/'/g, "\\'")}','','${place.website || ''}','${place.formatted_phone_number || ''}','${gMapsUrl}','${yelpUrl}')" style="width:100%; background:var(--accent); color:white; border:none; padding:10px; border-radius:4px; font-weight:bold; cursor:pointer;">PIN THIS PLACE</button></div>`);
     infoWindow.setPosition(place.geometry.location); infoWindow.open(map);
-    if(window.innerWidth <= 768) document.getElementById('sidebar').classList.remove('expanded');
+    setSheetState(false);
 }
 
 function openModal(lat, lng, name = '', address = '', id = '', website = '', phone = '', gUrl = '', yUrl = '') {
     if (!activeTrip) return alert('Select folder!');
     pendingCoords = { lat, lng }; editingPinId = id;
-    document.getElementById('pName').value = name; 
-    document.getElementById('pAddress').value = address; 
-    document.getElementById('pPhone').value = phone; 
-    document.getElementById('pLink').value = website;
-    document.getElementById('pgUrl').value = gUrl;
-    document.getElementById('pyUrl').value = yUrl;
+    document.getElementById('pName').value = name; document.getElementById('pAddress').value = address; document.getElementById('pPhone').value = phone; document.getElementById('pLink').value = website; document.getElementById('pgUrl').value = gUrl; document.getElementById('pyUrl').value = yUrl;
     if (!id) { document.getElementById('pNotes').value = ''; document.getElementById('pType').value = '🔴 Things to Do'; }
-    document.getElementById('modalTitle').innerText = id ? "EDIT PIN" : "ADD PIN";
     document.getElementById('pinModal').style.display = 'block';
 }
 
@@ -251,7 +248,7 @@ function editPin(id) { const pin = trips[activeTrip].pins[id]; document.getEleme
 function deleteTrip(key) { if (confirm(`Delete?`)) { db.ref(`trips/${key}`).remove(); if (activeTrip === key) activeTrip = null; } }
 function deletePin(id) { db.ref(`trips/${activeTrip}/pins/${id}`).remove(); }
 function closeModal() { document.getElementById('pinModal').style.display = 'none'; }
-function locateMe() { if (navigator.geolocation) { navigator.geolocation.getCurrentPosition(pos => { map.setCenter({ lat: pos.coords.latitude, lng: pos.coords.longitude }); map.setZoom(17); if(window.innerWidth <= 768) document.getElementById('sidebar').classList.remove('expanded'); }); } }
+function locateMe() { if (navigator.geolocation) { navigator.geolocation.getCurrentPosition(pos => { map.setCenter({ lat: pos.coords.latitude, lng: pos.coords.longitude }); map.setZoom(17); setSheetState(false); }); } }
 window.onload = initMap;
 </script>
 </body>
