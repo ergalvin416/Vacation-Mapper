@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>Vacation Mapper V67</title>
+    <title>Vacation Mapper V68</title>
 
     <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyC78EKBgSd2UsLSPUTGO1A-MF78BU20aLg&libraries=places"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
@@ -56,7 +56,6 @@
         .icon-btn { background:none; border:none; color:#666; cursor:pointer; font-size:1em; padding:4px; }
         .gps-btn { position: absolute; bottom: 90px; right: 20px; background: white; width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 -5px 15px rgba(0,0,0,0.4); z-index: 5; cursor: pointer; font-size: 20px; }
         
-        /* Popup Link Styling */
         .popup-links { display: flex; gap: 10px; margin-top: 8px; border-top: 1px solid #eee; padding-top: 8px; }
         .popup-links a { font-size: 10px; font-weight: bold; color: var(--accent); text-decoration: none; text-transform: uppercase; }
     </style>
@@ -69,13 +68,13 @@
         <div class="section">
             <h3 style="margin-top:0;">🌍 SHARED VACATIONS</h3>
             <input id="tripName" placeholder="NEW TRIP NAME..." />
-            <button class="primary" onclick="addTrip()">CREATE FOLDER</button>
+            <button class="primary" onclick="TripManager.addTrip()">CREATE FOLDER</button>
             <div id="tripList" style="margin-top:10px"></div>
         </div>
         <div class="section">
             <div class="search-container">
-                <input id="search-box" placeholder="🔍 SEARCH PLACES (OR CATAGORIES)..." />
-                <button id="clear-search-btn" onclick="clearFullSearch()">✕</button>
+                <input id="search-box" placeholder="🔍 SEARCH PLACES..." />
+                <button id="clear-search-btn" onclick="SearchModule.clearFullSearch()">✕</button>
             </div>
         </div>
         <div class="section" id="place-details">
@@ -83,7 +82,7 @@
             <div id="groupedList"></div>
         </div>
     </div>
-    <div id="map"><div class="gps-btn" onclick="locateMe()">📍</div></div>
+    <div id="map"><div class="gps-btn" onclick="UIManager.locateMe()">📍</div></div>
 </div>
 
 <div id="pinModal" class="form-overlay">
@@ -100,11 +99,27 @@
         <option value="🟢 Places to Stay">🟢 Places to Stay</option>
         <option value="🟡 Places to Eat">🟡 Places to Eat</option>
     </select>
-    <button class="primary" onclick="savePin()">SAVE PIN</button>
-    <button onclick="closeModal()" style="width:100%; background:none; border:none; color:#888; margin-top:10px; cursor:pointer;">Cancel</button>
+    <button class="primary" onclick="TripManager.savePin()">SAVE PIN</button>
+    <button onclick="UIManager.closeModal()" style="width:100%; background:none; border:none; color:#888; margin-top:10px; cursor:pointer;">Cancel</button>
 </div>
 
 <script>
+// --- CENTRALIZED APP STATE ---
+const AppState = {
+    map: null,
+    service: null,
+    infoWindow: null,
+    autocomplete: null,
+    trips: {},
+    activeTrip: null,
+    markers: [],
+    searchMarkers: [],
+    pendingCoords: null,
+    editingPinId: null,
+    touchStartY: 0,
+    touchEndY: 0
+};
+
 const firebaseConfig = {
     apiKey: "AIzaSyAlflCNqAaVmui0ipNCCWs3XNsvjprlFYA",
     authDomain: "vacation-mapper-1e723.firebaseapp.com",
@@ -118,224 +133,207 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
-let map, service, infoWindow, autocomplete, trips = {}, activeTrip = null, markers = [], searchMarkers = [], pendingCoords = null, editingPinId = null;
-let touchStartY = 0, touchEndY = 0;
+// --- UI MODULE ---
+const UIManager = {
+    initGestures() {
+        const handle = document.getElementById('sheetHandle');
+        const sidebar = document.getElementById('sidebar');
+        handle.addEventListener('click', () => this.setSheetState(!sidebar.classList.contains('expanded')));
+        sidebar.addEventListener('touchstart', (e) => { AppState.touchStartY = e.touches[0].screenY; }, {passive: true});
+        sidebar.addEventListener('touchend', (e) => {
+            AppState.touchEndY = e.changedTouches[0].screenY;
+            const diff = AppState.touchStartY - AppState.touchEndY;
+            if (Math.abs(diff) > 50) { if (diff > 0) this.setSheetState(true); else this.setSheetState(false); }
+        }, {passive: true});
+    },
+    setSheetState(isExpanded) {
+        if (window.innerWidth > 768) return;
+        const sidebar = document.getElementById('sidebar');
+        if (isExpanded) sidebar.classList.add('expanded');
+        else { sidebar.classList.remove('expanded'); sidebar.scrollTop = 0; }
+    },
+    openModal(lat, lng, name = '', address = '', id = '', website = '', phone = '', gUrl = '', yUrl = '') {
+        if (!AppState.activeTrip) return alert('Select folder!');
+        AppState.pendingCoords = { lat, lng }; AppState.editingPinId = id;
+        document.getElementById('pName').value = name; document.getElementById('pAddress').value = address;
+        document.getElementById('pPhone').value = phone; document.getElementById('pLink').value = website;
+        document.getElementById('pgUrl').value = gUrl; document.getElementById('pyUrl').value = yUrl;
+        if (!id) { document.getElementById('pNotes').value = ''; document.getElementById('pType').value = '🔴 Things to Do'; }
+        document.getElementById('modalTitle').innerText = id ? "EDIT PIN" : "ADD PIN";
+        document.getElementById('pinModal').style.display = 'block';
+    },
+    closeModal() { document.getElementById('pinModal').style.display = 'none'; },
+    locateMe() {
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(pos => {
+                AppState.map.setCenter({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+                AppState.map.setZoom(17); this.setSheetState(false);
+            });
+        }
+    }
+};
 
-function initMap() {
-    map = new google.maps.Map(document.getElementById('map'), { center:{lat:39.8,lng:-98.5}, zoom:4, mapTypeId:'hybrid', clickableIcons:true, mapTypeControl:false, streetViewControl:false, tilt: 0 });
-    service = new google.maps.places.PlacesService(map);
-    infoWindow = new google.maps.InfoWindow();
+// --- DATA MODULE ---
+const TripManager = {
+    addTrip() {
+        const input = document.getElementById('tripName');
+        const n = input.value.trim(); if (!n) return;
+        const safeKey = n.replace(/[.#$/\[\]]/g, '_');
+        db.ref(`trips/${safeKey}`).set({ created: Date.now(), name: n, pins: {} }).then(() => { input.value = ''; });
+    },
+    savePin() {
+        if (!AppState.activeTrip) return alert("Select folder!");
+        const pinId = AppState.editingPinId || Date.now();
+        const pinData = { 
+            id: pinId, lat: AppState.pendingCoords.lat, lng: AppState.pendingCoords.lng, 
+            name: document.getElementById('pName').value, address: document.getElementById('pAddress').value, 
+            phone: document.getElementById('pPhone').value, link: document.getElementById('pLink').value, 
+            gUrl: document.getElementById('pgUrl').value, yUrl: document.getElementById('pyUrl').value, 
+            notes: document.getElementById('pNotes').value, type: document.getElementById('pType').value 
+        };
+        db.ref(`trips/${AppState.activeTrip}/pins/${pinId}`).set(pinData).then(() => { SearchModule.clearFullSearch(); UIManager.closeModal(); });
+    },
+    loadTrip(key) {
+        AppState.activeTrip = key;
+        document.getElementById('activeTripTitle').innerText = (AppState.trips[key].name || key).toUpperCase();
+        AppState.markers.forEach(m => m.marker.setMap(null));
+        AppState.markers = [];
+        const pinObj = AppState.trips[key].pins || {};
+        Object.values(pinObj).forEach(pin => MapModule.displayMarker(pin));
+        this.renderList(); this.renderTrips();
+    },
+    renderTrips() {
+        const el = document.getElementById('tripList'); el.innerHTML = '';
+        Object.keys(AppState.trips).forEach(k => {
+            const div = document.createElement('div'); div.className = `vacation-item ${AppState.activeTrip === k ? 'active-trip' : ''}`;
+            div.innerHTML = `<span>${(AppState.trips[k].name || k).toUpperCase()}</span><button class='icon-btn' onclick='event.stopPropagation(); db.ref("trips/${k}").remove();'>🗑️</button>`;
+            div.onclick = () => this.loadTrip(k); el.appendChild(div);
+        });
+    },
+    renderList() {
+        const el = document.getElementById('groupedList'); el.innerHTML = '';
+        if (!AppState.activeTrip || !AppState.trips[AppState.activeTrip] || !AppState.trips[AppState.activeTrip].pins) return;
+        const pinArray = Object.values(AppState.trips[AppState.activeTrip].pins);
+        ['🔴 Things to Do', '🟢 Places to Stay', '🟡 Places to Eat'].forEach(cat => {
+            const items = pinArray.filter(p => p.type === cat); if (!items.length) return;
+            el.innerHTML += `<div class='category-header'>${cat}</div>`;
+            const colorClass = cat.includes("🔴") ? "name-todo" : cat.includes("🟢") ? "name-stay" : "name-eat";
+            items.forEach(p => {
+                const mU = p.gUrl || `https://www.google.com/maps/search/?api=1&query=${p.lat},${p.lng}`;
+                const dU = `https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}`;
+                el.innerHTML += `<div class='saved-place'><div style="display:flex; justify-content:space-between; align-items:flex-start;"><div class='place-info' onclick='MapModule.focusOnPin("${p.id}", ${p.lat}, ${p.lng})'><b class="${colorClass}">${p.name}</b>${p.notes ? `<div class="note-preview">${p.notes}</div>` : ''}</div><div style="display:flex; gap:2px;"><button class='icon-btn' onclick='event.stopPropagation(); TripManager.editPin("${p.id}")'>✏️</button><button class='icon-btn' style='color:var(--danger)' onclick='event.stopPropagation(); db.ref("trips/${AppState.activeTrip}/pins/${p.id}").remove();'>×</button></div></div><div class="pin-links"><a href="${mU}" target="_blank">MAP</a><a href="${dU}" target="_blank">DIRECTIONS</a>${p.yUrl ? `<a href="${p.yUrl}" target="_blank">YELP</a>` : ''}${p.link ? `<a href="${p.link}" target="_blank">WEB</a>` : ''}</div></div>`;
+            });
+        });
+    },
+    editPin(id) { 
+        const pin = AppState.trips[AppState.activeTrip].pins[id]; if(!pin) return; 
+        UIManager.openModal(pin.lat, pin.lng, pin.name, pin.address, pin.id, pin.link, pin.phone, pin.gUrl, pin.yUrl); 
+        document.getElementById('pNotes').value = pin.notes || ''; document.getElementById('pType').value = pin.type;
+    }
+};
+
+// --- MAP MODULE ---
+const MapModule = {
+    displayMarker(pin) {
+        let pinColor = pin.type.includes("🔴") ? "#e74c3c" : pin.type.includes("🟢") ? "#27ae60" : "#f1c40f";
+        const marker = new google.maps.Marker({ map: AppState.map, position: {lat: parseFloat(pin.lat), lng: parseFloat(pin.lng)}, icon: { path: "M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z", fillColor: pinColor, fillOpacity: 1, strokeColor: "#ffffff", strokeWeight: 2, scale: 1.5, anchor: new google.maps.Point(12, 22) } });
+        marker.addListener('click', () => this.openPopup(pin, marker));
+        AppState.markers.push({id: pin.id, marker});
+    },
+    openPopup(pin, marker) {
+        const mU = pin.gUrl || `https://www.google.com/maps/search/?api=1&query=${pin.lat},${pin.lng}`;
+        const dU = `https://www.google.com/maps/dir/?api=1&destination=${pin.lat},${pin.lng}`;
+        const yU = pin.yUrl || '';
+        AppState.infoWindow.setContent(`<div style="color:#222; min-width:180px; font-family:sans-serif;"><b>${pin.name}</b><div style="font-size:11px; color:#666; margin:4px 0;">${pin.address || ''}</div><div class="popup-links"><a href="${mU}" target="_blank">MAP</a><a href="${dU}" target="_blank">DIRECTIONS</a>${yU ? `<a href="${yU}" target="_blank">YELP</a>` : ''}</div></div>`);
+        AppState.infoWindow.open(AppState.map, marker); UIManager.setSheetState(false);
+    },
+    focusOnPin(id, lat, lng) {
+        AppState.map.setCenter({lat, lng}); AppState.map.setZoom(17);
+        const mObj = AppState.markers.find(m => m.id == id);
+        if (mObj) this.openPopup(AppState.trips[AppState.activeTrip].pins[id], mObj.marker);
+    }
+};
+
+// --- SEARCH MODULE ---
+const SearchModule = {
+    handleSearchSelect(p) {
+        this.clearSearchMarkers();
+        if (p.geometry.viewport) AppState.map.fitBounds(p.geometry.viewport);
+        else { AppState.map.setCenter(p.geometry.location); AppState.map.setZoom(17); }
+        AppState.service.getDetails({ placeId: p.place_id, fields: ['name', 'formatted_address', 'geometry', 'website', 'formatted_phone_number', 'url'] }, (res, status) => { 
+            if (status === 'OK') this.showLandmarkPopup(res); 
+        });
+        UIManager.setSheetState(false);
+    },
+    showLandmarkPopup(place) {
+        const lat = place.geometry.location.lat(), lng = place.geometry.location.lng();
+        const gMapsUrl = place.url || `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+        const yelpUrl = `https://www.yelp.com/search?find_desc=${encodeURIComponent(place.name)}&find_loc=${encodeURIComponent(place.formatted_address)}`; 
+        AppState.infoWindow.setContent(`<div style="color:#222; min-width:180px; font-family:sans-serif; padding:5px;"><b style="font-size:14px; display:block; margin-bottom:4px;">${place.name}</b><div style="font-size:11px; color:#666; margin-bottom:4px;">📍 ${place.formatted_address || ''}</div><div class="popup-links" style="margin-bottom:10px;"><a href="${gMapsUrl}" target="_blank">MAP / PHOTOS</a><a href="${yelpUrl}" target="_blank">YELP</a></div><button onclick="UIManager.openModal(${lat},${lng},'${place.name.replace(/'/g, "\\'")}','${(place.formatted_address || '').replace(/'/g, "\\'")}','','${place.website || ''}','${place.formatted_phone_number || ''}','${gMapsUrl}','${yelpUrl}')" style="width:100%; background:var(--accent); color:white; border:none; padding:10px; border-radius:4px; font-weight:bold; cursor:pointer;">PIN THIS PLACE</button></div>`);
+        AppState.infoWindow.setPosition(place.geometry.location); AppState.infoWindow.open(AppState.map); UIManager.setSheetState(false);
+    },
+    clearFullSearch() {
+        const sBox = document.getElementById('search-box'); sBox.value = '';
+        document.getElementById('clear-search-btn').style.display = 'none';
+        this.clearSearchMarkers(); AppState.infoWindow.close();
+    },
+    clearSearchMarkers() { AppState.searchMarkers.forEach(m => m.setMap(null)); AppState.searchMarkers = []; }
+};
+
+// --- INITIALIZATION ---
+function initApp() {
+    AppState.map = new google.maps.Map(document.getElementById('map'), { center:{lat:39.8,lng:-98.5}, zoom:4, mapTypeId:'hybrid', clickableIcons:true, mapTypeControl:false, streetViewControl:false, tilt: 0 });
+    AppState.service = new google.maps.places.PlacesService(AppState.map);
+    AppState.infoWindow = new google.maps.InfoWindow();
     
     // Offline mirroring logic
     const localBackup = localStorage.getItem('vmapper_pins_backup');
-    if (localBackup) { trips = JSON.parse(localBackup); renderTrips(); }
+    if (localBackup) { AppState.trips = JSON.parse(localBackup); TripManager.renderTrips(); }
 
     const sBox = document.getElementById('search-box');
     const clearBtn = document.getElementById('clear-search-btn');
-    autocomplete = new google.maps.places.Autocomplete(sBox);
-    autocomplete.bindTo('bounds', map);
-
-    autocomplete.addListener('place_changed', () => { 
-        const p = autocomplete.getPlace(); 
-        if (!p.geometry) return;
-        clearBtn.style.display = 'flex';
-        handleSearchSelect(p);
+    AppState.autocomplete = new google.maps.places.Autocomplete(sBox);
+    AppState.autocomplete.bindTo('bounds', AppState.map);
+    AppState.autocomplete.addListener('place_changed', () => { 
+        const p = AppState.autocomplete.getPlace(); if (p.geometry) { clearBtn.style.display = 'flex'; SearchModule.handleSearchSelect(p); }
     });
 
     sBox.addEventListener('input', () => { clearBtn.style.display = sBox.value ? 'flex' : 'none'; });
-
     sBox.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-            const query = sBox.value;
-            if (!query) return;
+        if (e.key === 'Enter' && sBox.value) {
             clearBtn.style.display = 'flex';
-            service.textSearch({ query: query, bounds: map.getBounds() }, (results, status) => {
+            AppState.service.textSearch({ query: sBox.value, bounds: AppState.map.getBounds() }, (results, status) => {
                 if (status === google.maps.places.PlacesServiceStatus.OK) {
-                    clearSearchMarkers();
+                    SearchModule.clearSearchMarkers();
                     results.forEach((res, i) => {
-                        const marker = new google.maps.Marker({
-                            map, position: res.geometry.location,
-                            icon: { path: google.maps.SymbolPath.BACKWARD_CLOSED_ARROW, scale: 5, fillColor: "#4a90e2", fillOpacity: 0.9, strokeColor: "#ffffff", strokeWeight: 2 }
-                        });
+                        const marker = new google.maps.Marker({ map: AppState.map, position: res.geometry.location, icon: { path: google.maps.SymbolPath.BACKWARD_CLOSED_ARROW, scale: 5, fillColor: "#4a90e2", fillOpacity: 0.9, strokeColor: "#ffffff", strokeWeight: 2 } });
                         marker.addListener('click', () => {
-                            service.getDetails({ placeId: res.place_id, fields: ['name', 'formatted_address', 'geometry', 'website', 'formatted_phone_number', 'url'] }, (p, s) => { if (s === 'OK') showLandmarkPopup(p); });
+                            AppState.service.getDetails({ placeId: res.place_id, fields: ['name', 'formatted_address', 'geometry', 'website', 'formatted_phone_number', 'url'] }, (p, s) => { if (s === 'OK') SearchModule.showLandmarkPopup(p); });
                         });
-                        searchMarkers.push(marker);
-                        if (i === 0) map.panTo(res.geometry.location);
+                        AppState.searchMarkers.push(marker); if (i === 0) AppState.map.panTo(res.geometry.location);
                     });
-                    setSheetState(false);
+                    UIManager.setSheetState(false);
                 }
             });
         }
     });
 
-    map.addListener('click', (e) => {
+    AppState.map.addListener('click', (e) => {
         if (e.placeId) {
             e.stop();
-            service.getDetails({ placeId: e.placeId, fields: ['name', 'formatted_address', 'geometry', 'website', 'formatted_phone_number', 'url'] }, (p, s) => { if (s === 'OK') showLandmarkPopup(p); });
-        } else { openModal(e.latLng.lat(), e.latLng.lng()); }
+            AppState.service.getDetails({ placeId: e.placeId, fields: ['name', 'formatted_address', 'geometry', 'website', 'formatted_phone_number', 'url'] }, (p, s) => { if (s === 'OK') SearchModule.showLandmarkPopup(p); });
+        } else { UIManager.openModal(e.latLng.lat(), e.latLng.lng()); }
     });
 
     db.ref('trips').on('value', (s) => { 
-        trips = s.val() || {}; 
-        localStorage.setItem('vmapper_pins_backup', JSON.stringify(trips));
-        renderTrips(); 
-        if (activeTrip) loadTrip(activeTrip); 
+        AppState.trips = s.val() || {}; 
+        localStorage.setItem('vmapper_pins_backup', JSON.stringify(AppState.trips));
+        TripManager.renderTrips(); if (AppState.activeTrip) TripManager.loadTrip(AppState.activeTrip); 
     });
-    
-    initGestures();
+    UIManager.initGestures();
 }
 
-function clearFullSearch() {
-    const sBox = document.getElementById('search-box');
-    sBox.value = '';
-    document.getElementById('clear-search-btn').style.display = 'none';
-    clearSearchMarkers();
-    infoWindow.close();
-}
-
-function clearSearchMarkers() {
-    searchMarkers.forEach(m => m.setMap(null));
-    searchMarkers = [];
-}
-
-function handleSearchSelect(p) {
-    clearSearchMarkers();
-    if (p.geometry.viewport) map.fitBounds(p.geometry.viewport);
-    else { map.setCenter(p.geometry.location); map.setZoom(17); }
-    service.getDetails({ placeId: p.place_id, fields: ['name', 'formatted_address', 'geometry', 'website', 'formatted_phone_number', 'url'] }, (res, status) => { if (status === 'OK') showLandmarkPopup(res); });
-    setSheetState(false);
-}
-
-function initGestures() {
-    const handle = document.getElementById('sheetHandle');
-    const sidebar = document.getElementById('sidebar');
-    handle.addEventListener('click', () => setSheetState(!sidebar.classList.contains('expanded')));
-    sidebar.addEventListener('touchstart', (e) => { touchStartY = e.touches[0].screenY; }, {passive: true});
-    sidebar.addEventListener('touchend', (e) => {
-        touchEndY = e.changedTouches[0].screenY;
-        const diff = touchStartY - touchEndY;
-        if (Math.abs(diff) > 50) { if (diff > 0) setSheetState(true); else setSheetState(false); }
-    }, {passive: true});
-}
-
-function setSheetState(isExpanded) {
-    if (window.innerWidth > 768) return;
-    const sidebar = document.getElementById('sidebar');
-    if (isExpanded) sidebar.classList.add('expanded');
-    else { sidebar.classList.remove('expanded'); sidebar.scrollTop = 0; }
-}
-
-function addTrip() {
-    const input = document.getElementById('tripName');
-    const n = input.value.trim(); if (!n) return;
-    const safeKey = n.replace(/[.#$/\[\]]/g, '_');
-    db.ref(`trips/${safeKey}`).set({ created: Date.now(), name: n, pins: {} }).then(() => { input.value = ''; });
-}
-
-function savePin() {
-    if (!activeTrip) return alert("Select folder!");
-    const pinId = editingPinId || Date.now();
-    const pinData = { id: pinId, lat: pendingCoords.lat, lng: pendingCoords.lng, name: document.getElementById('pName').value, address: document.getElementById('pAddress').value, phone: document.getElementById('pPhone').value, link: document.getElementById('pLink').value, gUrl: document.getElementById('pgUrl').value, yUrl: document.getElementById('pyUrl').value, notes: document.getElementById('pNotes').value, type: document.getElementById('pType').value };
-    db.ref(`trips/${activeTrip}/pins/${pinId}`).set(pinData).then(() => { clearFullSearch(); closeModal(); });
-}
-
-function displayMarker(pin) {
-    let pinColor = pin.type.includes("🔴") ? "#e74c3c" : pin.type.includes("🟢") ? "#27ae60" : "#f1c40f";
-    const marker = new google.maps.Marker({ map, position: {lat: parseFloat(pin.lat), lng: parseFloat(pin.lng)}, icon: { path: "M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z", fillColor: pinColor, fillOpacity: 1, strokeColor: "#ffffff", strokeWeight: 2, scale: 1.5, anchor: new google.maps.Point(12, 22) } });
-    marker.openPopup = () => {
-        const mU = pin.gUrl || `https://www.google.com/maps/search/?api=1&query=${pin.lat},${pin.lng}`;
-        const dU = `https://www.google.com/maps/dir/?api=1&destination=${pin.lat},${pin.lng}`;
-        const yU = pin.yUrl || '';
-        
-        // REVISED: Yelp moved to bottom row
-        infoWindow.setContent(`
-            <div style="color:#222; min-width:180px; font-family:sans-serif;">
-                <b>${pin.name}</b>
-                <div style="font-size:11px; color:#666; margin:4px 0;">${pin.address || ''}</div>
-                <div class="popup-links">
-                    <a href="${mU}" target="_blank">MAP</a>
-                    <a href="${dU}" target="_blank">DIRECTIONS</a>
-                    ${yU ? `<a href="${yU}" target="_blank">YELP</a>` : ''}
-                </div>
-            </div>`);
-        infoWindow.open(map, marker);
-        setSheetState(false);
-    };
-    marker.addListener('click', marker.openPopup);
-    markers.push({id: pin.id, marker});
-}
-
-function renderList() {
-    const el = document.getElementById('groupedList'); el.innerHTML = '';
-    if (!activeTrip || !trips[activeTrip] || !trips[activeTrip].pins) return;
-    const pinArray = Object.values(trips[activeTrip].pins);
-    ['🔴 Things to Do', '🟢 Places to Stay', '🟡 Places to Eat'].forEach(cat => {
-        const items = pinArray.filter(p => p.type === cat); if (!items.length) return;
-        el.innerHTML += `<div class='category-header'>${cat}</div>`;
-        const colorClass = cat.includes("🔴") ? "name-todo" : cat.includes("🟢") ? "name-stay" : "name-eat";
-        items.forEach(p => {
-            const mU = p.gUrl || `https://www.google.com/maps/search/?api=1&query=${p.lat},${p.lng}`;
-            const dU = `https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}`;
-            el.innerHTML += `<div class='saved-place'><div style="display:flex; justify-content:space-between; align-items:flex-start;"><div class='place-info' onclick='focusOnPin("${p.id}", ${p.lat}, ${p.lng})'><b class="${colorClass}">${p.name}</b>${p.notes ? `<div class="note-preview">${p.notes}</div>` : ''}</div><div style="display:flex; gap:2px;"><button class='icon-btn' onclick='editPin("${p.id}")'>✏️</button><button class='icon-btn' style='color:var(--danger)' onclick='deletePin("${p.id}")'>×</button></div></div><div class="pin-links"><a href="${mU}" target="_blank">MAP</a><a href="${dU}" target="_blank">DIRECTIONS</a>${p.yUrl ? `<a href="${p.yUrl}" target="_blank">YELP</a>` : ''}${p.link ? `<a href="${p.link}" target="_blank">WEB</a>` : ''}</div></div>`;
-        });
-    });
-}
-
-function focusOnPin(id, lat, lng) {
-    map.setCenter({lat, lng}); map.setZoom(17);
-    const mObj = markers.find(m => m.id == id);
-    if (mObj) mObj.marker.openPopup();
-    setSheetState(false);
-}
-
-function renderTrips() {
-    const el = document.getElementById('tripList'); el.innerHTML = '';
-    Object.keys(trips).forEach(k => {
-        const div = document.createElement('div'); div.className = `vacation-item ${activeTrip === k ? 'active-trip' : ''}`;
-        div.innerHTML = `<span>${(trips[k].name || k).toUpperCase()}</span><button class='icon-btn' onclick='event.stopPropagation(); deleteTrip("${k}")'>🗑️</button>`;
-        div.onclick = () => loadTrip(k); el.appendChild(div);
-    });
-}
-
-function loadTrip(key) { activeTrip = key; document.getElementById('activeTripTitle').innerText = (trips[key].name || key).toUpperCase(); markers.forEach(m => m.marker.setMap(null)); markers = []; const pinObj = trips[key].pins || {}; Object.values(pinObj).forEach(displayMarker); renderList(); renderTrips(); }
-
-function showLandmarkPopup(place) {
-    const lat = place.geometry.location.lat(), lng = place.geometry.location.lng();
-    const gMapsUrl = place.url || `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
-    const yelpUrl = `https://www.yelp.com/search?find_desc=${encodeURIComponent(place.name)}&find_loc=${encodeURIComponent(place.formatted_address)}`; 
-    
-    // REVISED: Yelp moved to bottom row for discovery popup as well
-    infoWindow.setContent(`
-        <div style="color:#222; min-width:180px; font-family:sans-serif; padding:5px;">
-            <b style="font-size:14px; display:block; margin-bottom:4px;">${place.name}</b>
-            <div style="font-size:11px; color:#666; margin-bottom:4px;">📍 ${place.formatted_address || ''}</div>
-            
-            <div class="popup-links" style="margin-bottom: 10px;">
-                <a href="${gMapsUrl}" target="_blank">MAP / PHOTOS</a>
-                <a href="${yelpUrl}" target="_blank">YELP</a>
-            </div>
-
-            <button onclick="openModal(${lat},${lng},'${place.name.replace(/'/g, "\\'")}','${(place.formatted_address || '').replace(/'/g, "\\'")}','','${place.website || ''}','${place.formatted_phone_number || ''}','${gMapsUrl}','${yelpUrl}')" style="width:100%; background:var(--accent); color:white; border:none; padding:10px; border-radius:4px; font-weight:bold; cursor:pointer;">PIN THIS PLACE</button>
-        </div>`);
-    infoWindow.setPosition(place.geometry.location); infoWindow.open(map);
-    setSheetState(false);
-}
-
-function openModal(lat, lng, name = '', address = '', id = '', website = '', phone = '', gUrl = '', yUrl = '') {
-    if (!activeTrip) return alert('Select folder!');
-    pendingCoords = { lat, lng }; editingPinId = id;
-    document.getElementById('pName').value = name; document.getElementById('pAddress').value = address; document.getElementById('pPhone').value = phone; document.getElementById('pLink').value = website; document.getElementById('pgUrl').value = gUrl; document.getElementById('pyUrl').value = yUrl;
-    if (!id) { document.getElementById('pNotes').value = ''; document.getElementById('pType').value = '🔴 Things to Do'; }
-    document.getElementById('pinModal').style.display = 'block';
-}
-
-function editPin(id) { const pin = trips[activeTrip].pins[id]; if(!pin) return; openModal(pin.lat, pin.lng, pin.name, pin.address, pin.id, pin.link, pin.phone, pin.gUrl, pin.yUrl); document.getElementById('pNotes').value = pin.notes || ''; document.getElementById('pType').value = pin.type; }
-function deleteTrip(key) { if (confirm(`Delete?`)) { db.ref(`trips/${key}`).remove(); if (activeTrip === key) activeTrip = null; } }
-function deletePin(id) { db.ref(`trips/${activeTrip}/pins/${id}`).remove(); }
-function closeModal() { document.getElementById('pinModal').style.display = 'none'; }
-function locateMe() { if (navigator.geolocation) { navigator.geolocation.getCurrentPosition(pos => { map.setCenter({ lat: pos.coords.latitude, lng: pos.coords.longitude }); map.setZoom(17); setSheetState(false); }); } }
-window.onload = initMap;
+window.onload = initApp;
 </script>
 </body>
 </html>
