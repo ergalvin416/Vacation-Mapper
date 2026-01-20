@@ -3,11 +3,12 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>Vacation Mapper V70</title>
+    <title>Vacation Mapper V71</title>
 
     <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyC78EKBgSd2UsLSPUTGO1A-MF78BU20aLg&libraries=places"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
 
     <style>
         :root { --bg:#1e1e24; --panel:#16161c; --accent:#4a90e2; --text:#eee; --danger:#e74c3c; --todo:#e74c3c; --stay:#27ae60; --eat:#f1c40f; }
@@ -95,9 +96,7 @@
 </div>
 
 <script>
-// --- CONFIG & SECRET ---
-const SECRET = 'lpseg202'; // CHANGE THIS to match your Firebase Rules!
-
+// --- CENTRALIZED APP STATE ---
 const AppState = {
     map: null, service: null, infoWindow: null, autocomplete: null,
     trips: {}, activeTrip: null, markers: [], searchMarkers: [],
@@ -116,6 +115,7 @@ const firebaseConfig = {
 
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
+const auth = firebase.auth();
 
 // --- UI MODULE ---
 const UIManager = {
@@ -163,11 +163,7 @@ const TripManager = {
         const input = document.getElementById('tripName');
         const n = input.value.trim(); if (!n) return;
         const safeKey = n.replace(/[.#$/\[\]]/g, '_');
-        // SECURE WRITE: Send secret key with trip
-        const updates = {};
-        updates[`/trips/${safeKey}`] = { created: Date.now(), name: n, pins: {} };
-        updates['/secret'] = SECRET;
-        db.ref().update(updates).then(() => { input.value = ''; }).catch(err => alert("Security Error: Check Rules"));
+        db.ref(`trips/${safeKey}`).set({ created: Date.now(), name: n, pins: {} }).catch(err => alert("Sync Error: " + err.message));
     },
     savePin() {
         if (!AppState.activeTrip) return alert("Select folder!");
@@ -179,24 +175,13 @@ const TripManager = {
             gUrl: document.getElementById('pgUrl').value, yUrl: document.getElementById('pyUrl').value, 
             notes: document.getElementById('pNotes').value, type: document.getElementById('pType').value 
         };
-        // SECURE WRITE: Send secret key with pin
-        const updates = {};
-        updates[`/trips/${AppState.activeTrip}/pins/${pinId}`] = pinData;
-        updates['/secret'] = SECRET;
-        db.ref().update(updates).then(() => { SearchModule.clearFullSearch(); UIManager.closeModal(); }).catch(err => alert("Security Error: " + err.message));
+        db.ref(`trips/${AppState.activeTrip}/pins/${pinId}`).set(pinData).then(() => { SearchModule.clearFullSearch(); UIManager.closeModal(); }).catch(err => alert("Sync Error: " + err.message));
     },
     deleteTrip(key) {
-        if (!confirm("Delete Trip?")) return;
-        const updates = {};
-        updates[`/trips/${key}`] = null;
-        updates['/secret'] = SECRET;
-        db.ref().update(updates).catch(err => alert("Security Error"));
+        if (confirm("Delete Trip?")) db.ref(`trips/${key}`).remove();
     },
     deletePin(id) {
-        const updates = {};
-        updates[`/trips/${AppState.activeTrip}/pins/${id}`] = null;
-        updates['/secret'] = SECRET;
-        db.ref().update(updates).catch(err => alert("Security Error"));
+        db.ref(`trips/${AppState.activeTrip}/pins/${id}`).remove();
     },
     loadTrip(key) {
         AppState.activeTrip = key;
@@ -292,6 +277,9 @@ function initApp() {
     AppState.service = new google.maps.places.PlacesService(AppState.map);
     AppState.infoWindow = new google.maps.InfoWindow();
     
+    // SILENT LOGIN
+    auth.signInAnonymously().catch(err => alert("Auth Error: " + err.message));
+
     const localBackup = localStorage.getItem('vmapper_pins_backup');
     if (localBackup) { AppState.trips = JSON.parse(localBackup); TripManager.renderTrips(); }
 
