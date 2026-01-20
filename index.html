@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>Vacation Mapper V71</title>
+    <title>Vacation Mapper V71.1</title>
 
     <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyC78EKBgSd2UsLSPUTGO1A-MF78BU20aLg&libraries=places"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
@@ -30,7 +30,7 @@
         .mobile-handle { display: none; }
         .section { padding:15px; border-bottom:1px solid #333; }
         .search-container { position: relative; width: 100%; }
-        #search-box { width: 100%; padding-right: 40px !important; }
+        #search-box { width: 100%; padding: 12px; padding-right: 40px !important; background:#121212; color:white; border:1px solid #444; border-radius:6px; box-sizing:border-box; font-size: 16px; }
         #clear-search-btn { position: absolute; right: 10px; top: 12px; background: #333; color: #fff; border: none; border-radius: 50%; width: 24px; height: 24px; cursor: pointer; display: none; align-items: center; justify-content: center; font-size: 14px; z-index: 5; }
         .vacation-item { padding:12px; background:#2a2a32; margin-bottom:8px; border-radius:8px; cursor:pointer; display:flex; justify-content:space-between; align-items: center; border-left: 6px solid transparent; }
         .active-trip { border-left: 6px solid var(--accent); background:#3a3a45; }
@@ -96,12 +96,15 @@
 </div>
 
 <script>
+// --- CENTRALIZED APP STATE ---
 const AppState = {
     map: null, service: null, infoWindow: null, autocomplete: null,
     trips: {}, activeTrip: null, markers: [], searchMarkers: [],
-    pendingCoords: null, editingPinId: null, touchStartY: 0, touchEndY: 0
+    pendingCoords: null, editingPinId: null, touchStartY: 0, touchEndY: 0,
+    placeCache: {} // NEW: Storage to save Google API quota
 };
 
+// --- FIREBASE CONFIG ---
 const firebaseConfig = {
     apiKey: "AIzaSyAlflCNqAaVmui0ipNCCWs3XNsvjprlFYA",
     authDomain: "vacation-mapper-1e723.firebaseapp.com",
@@ -116,6 +119,7 @@ firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 const auth = firebase.auth();
 
+// --- UI MODULE ---
 const UIManager = {
     initGestures() {
         const handle = document.getElementById('sheetHandle');
@@ -155,6 +159,7 @@ const UIManager = {
     }
 };
 
+// --- DATA MODULE ---
 const TripManager = {
     addTrip() {
         const input = document.getElementById('tripName');
@@ -182,16 +187,18 @@ const TripManager = {
     },
     loadTrip(key) {
         AppState.activeTrip = key;
-        document.getElementById('activeTripTitle').innerText = (AppState.trips[key].name || key).toUpperCase();
+        const tripName = AppState.trips[key] ? (AppState.trips[key].name || key) : key;
+        document.getElementById('activeTripTitle').innerText = tripName.toUpperCase();
         AppState.markers.forEach(m => m.marker.setMap(null));
         AppState.markers = [];
-        const pinObj = AppState.trips[key].pins || {};
+        const pinObj = (AppState.trips[key] && AppState.trips[key].pins) || {};
         Object.values(pinObj).forEach(pin => MapModule.displayMarker(pin));
         this.renderList(); this.renderTrips();
     },
     renderTrips() {
         const el = document.getElementById('tripList'); el.innerHTML = '';
         Object.keys(AppState.trips).forEach(k => {
+            if (k === 'app_secret' || k === 'secret') return;
             const div = document.createElement('div'); div.className = `vacation-item ${AppState.activeTrip === k ? 'active-trip' : ''}`;
             div.innerHTML = `<span>${(AppState.trips[k].name || k).toUpperCase()}</span><button class='icon-btn' onclick='event.stopPropagation(); TripManager.deleteTrip("${k}")'>🗑️</button>`;
             div.onclick = () => this.loadTrip(k); el.appendChild(div);
@@ -219,6 +226,43 @@ const TripManager = {
     }
 };
 
+// --- SEARCH MODULE ---
+const SearchModule = {
+    handleSearchSelect(p) {
+        this.clearSearchMarkers();
+        if (p.geometry.viewport) AppState.map.fitBounds(p.geometry.viewport);
+        else { AppState.map.setCenter(p.geometry.location); AppState.map.setZoom(17); }
+
+        // CHECK CACHE FIRST
+        if (AppState.placeCache[p.place_id]) {
+            this.showLandmarkPopup(AppState.placeCache[p.place_id]);
+        } else {
+            AppState.service.getDetails({ placeId: p.place_id, fields: ['name', 'formatted_address', 'geometry', 'website', 'formatted_phone_number', 'url'] }, (res, status) => { 
+                if (status === 'OK') {
+                    AppState.placeCache[p.place_id] = res;
+                    this.showLandmarkPopup(res); 
+                }
+            });
+        }
+        UIManager.setSheetState(false);
+    },
+    showLandmarkPopup(place) {
+        const lat = place.geometry.location.lat(), lng = place.geometry.location.lng();
+        const gMapsUrl = place.url || `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+        const dUrl = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
+        const yelpUrl = `https://www.yelp.com/search?find_desc=${encodeURIComponent(place.name)}&find_loc=${encodeURIComponent(place.formatted_address)}`; 
+        AppState.infoWindow.setContent(`<div style="color:#222; min-width:180px; font-family:sans-serif; padding:5px;"><b style="font-size:14px; display:block; margin-bottom:4px;">${place.name}</b><div style="font-size:11px; color:#666; margin-bottom:4px;">📍 ${place.formatted_address || ''}</div><div class="popup-links" style="margin-bottom:10px;"><a href="${gMapsUrl}" target="_blank">MAP</a><a href="${dUrl}" target="_blank">DIRECTIONS</a><a href="${yelpUrl}" target="_blank">YELP</a></div><button onclick="UIManager.openModal(${lat},${lng},'${place.name.replace(/'/g, "\\'")}','${(place.formatted_address || '').replace(/'/g, "\\'")}','','${place.website || ''}','${place.formatted_phone_number || ''}','${gMapsUrl}','${yelpUrl}')" style="width:100%; background:var(--accent); color:white; border:none; padding:10px; border-radius:4px; font-weight:bold; cursor:pointer;">PIN THIS PLACE</button></div>`);
+        AppState.infoWindow.setPosition(place.geometry.location); AppState.infoWindow.open(AppState.map); UIManager.setSheetState(false);
+    },
+    clearFullSearch() {
+        const sBox = document.getElementById('search-box'); sBox.value = '';
+        document.getElementById('clear-search-btn').style.display = 'none';
+        this.clearSearchMarkers(); AppState.infoWindow.close();
+    },
+    clearSearchMarkers() { AppState.searchMarkers.forEach(m => m.setMap(null)); AppState.searchMarkers = []; }
+};
+
+// --- MAP MODULE ---
 const MapModule = {
     displayMarker(pin) {
         let pinColor = pin.type.includes("🔴") ? "#e74c3c" : pin.type.includes("🟢") ? "#27ae60" : "#f1c40f";
@@ -240,37 +284,13 @@ const MapModule = {
     }
 };
 
-const SearchModule = {
-    handleSearchSelect(p) {
-        this.clearSearchMarkers();
-        if (p.geometry.viewport) AppState.map.fitBounds(p.geometry.viewport);
-        else { AppState.map.setCenter(p.geometry.location); AppState.map.setZoom(17); }
-        AppState.service.getDetails({ placeId: p.place_id, fields: ['name', 'formatted_address', 'geometry', 'website', 'formatted_phone_number', 'url'] }, (res, status) => { 
-            if (status === 'OK') this.showLandmarkPopup(res); 
-        });
-        UIManager.setSheetState(false);
-    },
-    showLandmarkPopup(place) {
-        const lat = place.geometry.location.lat(), lng = place.geometry.location.lng();
-        const gMapsUrl = place.url || `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
-        const dUrl = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
-        const yelpUrl = `https://www.yelp.com/search?find_desc=${encodeURIComponent(place.name)}&find_loc=${encodeURIComponent(place.formatted_address)}`; 
-        AppState.infoWindow.setContent(`<div style="color:#222; min-width:180px; font-family:sans-serif; padding:5px;"><b style="font-size:14px; display:block; margin-bottom:4px;">${place.name}</b><div style="font-size:11px; color:#666; margin-bottom:4px;">📍 ${place.formatted_address || ''}</div><div class="popup-links" style="margin-bottom:10px;"><a href="${gMapsUrl}" target="_blank">MAP</a><a href="${dUrl}" target="_blank">DIRECTIONS</a><a href="${yelpUrl}" target="_blank">YELP</a></div><button onclick="UIManager.openModal(${lat},${lng},'${place.name.replace(/'/g, "\\'")}','${(place.formatted_address || '').replace(/'/g, "\\'")}','','${place.website || ''}','${place.formatted_phone_number || ''}','${gMapsUrl}','${yelpUrl}')" style="width:100%; background:var(--accent); color:white; border:none; padding:10px; border-radius:4px; font-weight:bold; cursor:pointer;">PIN THIS PLACE</button></div>`);
-        AppState.infoWindow.setPosition(place.geometry.location); AppState.infoWindow.open(AppState.map); UIManager.setSheetState(false);
-    },
-    clearFullSearch() {
-        const sBox = document.getElementById('search-box'); sBox.value = '';
-        document.getElementById('clear-search-btn').style.display = 'none';
-        this.clearSearchMarkers(); AppState.infoWindow.close();
-    },
-    clearSearchMarkers() { AppState.searchMarkers.forEach(m => m.setMap(null)); AppState.searchMarkers = []; }
-};
-
+// --- INITIALIZATION ---
 function initApp() {
     AppState.map = new google.maps.Map(document.getElementById('map'), { center:{lat:39.8,lng:-98.5}, zoom:4, mapTypeId:'hybrid', clickableIcons:true, mapTypeControl:false, streetViewControl:false, tilt: 0 });
     AppState.service = new google.maps.places.PlacesService(AppState.map);
     AppState.infoWindow = new google.maps.InfoWindow();
     
+    // SILENT LOGIN
     auth.signInAnonymously().catch(err => alert("Auth Error: " + err.message));
 
     const localBackup = localStorage.getItem('vmapper_pins_backup');
@@ -294,7 +314,17 @@ function initApp() {
                     results.forEach((res, i) => {
                         const marker = new google.maps.Marker({ map: AppState.map, position: res.geometry.location, icon: { path: google.maps.SymbolPath.BACKWARD_CLOSED_ARROW, scale: 5, fillColor: "#4a90e2", fillOpacity: 0.9, strokeColor: "#ffffff", strokeWeight: 2 } });
                         marker.addListener('click', () => {
-                            AppState.service.getDetails({ placeId: res.place_id, fields: ['name', 'formatted_address', 'geometry', 'website', 'formatted_phone_number', 'url'] }, (p, s) => { if (s === 'OK') SearchModule.showLandmarkPopup(p); });
+                            // CACHE CHECK
+                            if (AppState.placeCache[res.place_id]) {
+                                SearchModule.showLandmarkPopup(AppState.placeCache[res.place_id]);
+                            } else {
+                                AppState.service.getDetails({ placeId: res.place_id, fields: ['name', 'formatted_address', 'geometry', 'website', 'formatted_phone_number', 'url'] }, (p, s) => { 
+                                    if (s === 'OK') {
+                                        AppState.placeCache[res.place_id] = p;
+                                        SearchModule.showLandmarkPopup(p); 
+                                    }
+                                });
+                            }
                         });
                         AppState.searchMarkers.push(marker); if (i === 0) AppState.map.panTo(res.geometry.location);
                     });
@@ -307,7 +337,17 @@ function initApp() {
     AppState.map.addListener('click', (e) => {
         if (e.placeId) {
             e.stop();
-            AppState.service.getDetails({ placeId: e.placeId, fields: ['name', 'formatted_address', 'geometry', 'website', 'formatted_phone_number', 'url'] }, (p, s) => { if (s === 'OK') SearchModule.showLandmarkPopup(p); });
+            // CACHE CHECK
+            if (AppState.placeCache[e.placeId]) {
+                SearchModule.showLandmarkPopup(AppState.placeCache[e.placeId]);
+            } else {
+                AppState.service.getDetails({ placeId: e.placeId, fields: ['name', 'formatted_address', 'geometry', 'website', 'formatted_phone_number', 'url'] }, (p, s) => { 
+                    if (s === 'OK') {
+                        AppState.placeCache[e.placeId] = p;
+                        SearchModule.showLandmarkPopup(p); 
+                    }
+                });
+            }
         } else { UIManager.openModal(e.latLng.lat(), e.latLng.lng()); }
     });
 
