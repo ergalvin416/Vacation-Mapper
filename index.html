@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>Vacation Mapper V66</title>
+    <title>Vacation Mapper V67</title>
 
     <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyC78EKBgSd2UsLSPUTGO1A-MF78BU20aLg&libraries=places"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
@@ -55,6 +55,10 @@
         button.primary { width:100%; padding:12px; background:var(--accent); border:none; color:white; font-weight:bold; cursor:pointer; border-radius:6px; }
         .icon-btn { background:none; border:none; color:#666; cursor:pointer; font-size:1em; padding:4px; }
         .gps-btn { position: absolute; bottom: 90px; right: 20px; background: white; width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 -5px 15px rgba(0,0,0,0.4); z-index: 5; cursor: pointer; font-size: 20px; }
+        
+        /* Popup Link Styling */
+        .popup-links { display: flex; gap: 10px; margin-top: 8px; border-top: 1px solid #eee; padding-top: 8px; }
+        .popup-links a { font-size: 10px; font-weight: bold; color: var(--accent); text-decoration: none; text-transform: uppercase; }
     </style>
 </head>
 <body>
@@ -122,12 +126,9 @@ function initMap() {
     service = new google.maps.places.PlacesService(map);
     infoWindow = new google.maps.InfoWindow();
     
-    // OFFLINE LOGIC: Load from local backup immediately
+    // Offline mirroring logic
     const localBackup = localStorage.getItem('vmapper_pins_backup');
-    if (localBackup) {
-        trips = JSON.parse(localBackup);
-        renderTrips();
-    }
+    if (localBackup) { trips = JSON.parse(localBackup); renderTrips(); }
 
     const sBox = document.getElementById('search-box');
     const clearBtn = document.getElementById('clear-search-btn');
@@ -175,7 +176,6 @@ function initMap() {
         } else { openModal(e.latLng.lat(), e.latLng.lng()); }
     });
 
-    // BACKUP LOGIC: Save to local storage whenever cloud data changes
     db.ref('trips').on('value', (s) => { 
         trips = s.val() || {}; 
         localStorage.setItem('vmapper_pins_backup', JSON.stringify(trips));
@@ -247,7 +247,18 @@ function displayMarker(pin) {
         const mU = pin.gUrl || `https://www.google.com/maps/search/?api=1&query=${pin.lat},${pin.lng}`;
         const dU = `https://www.google.com/maps/dir/?api=1&destination=${pin.lat},${pin.lng}`;
         const yU = pin.yUrl || '';
-        infoWindow.setContent(`<div style="color:#222; min-width:180px; font-family:sans-serif;"><b>${pin.name}</b><div style="font-size:11px; color:#666; margin:4px 0;">${pin.address || ''}</div>${yU ? `<a href="${yU}" target="_blank" style="color:var(--accent); font-size:10px; font-weight:bold; text-decoration:none; display:block; margin-bottom:5px;">➔ YELP REVIEWS</a>` : ''}<div style="display:flex; gap:10px; margin-top:8px; border-top:1px solid #eee; padding-top:8px;"><a href="${mU}" target="_blank" style="font-size:10px; font-weight:bold; color:var(--accent); text-decoration:none;">MAP</a><a href="${dU}" target="_blank" style="font-size:10px; font-weight:bold; color:var(--accent); text-decoration:none;">DIRECTIONS</a></div></div>`);
+        
+        // REVISED: Yelp moved to bottom row
+        infoWindow.setContent(`
+            <div style="color:#222; min-width:180px; font-family:sans-serif;">
+                <b>${pin.name}</b>
+                <div style="font-size:11px; color:#666; margin:4px 0;">${pin.address || ''}</div>
+                <div class="popup-links">
+                    <a href="${mU}" target="_blank">MAP</a>
+                    <a href="${dU}" target="_blank">DIRECTIONS</a>
+                    ${yU ? `<a href="${yU}" target="_blank">YELP</a>` : ''}
+                </div>
+            </div>`);
         infoWindow.open(map, marker);
         setSheetState(false);
     };
@@ -293,7 +304,20 @@ function showLandmarkPopup(place) {
     const lat = place.geometry.location.lat(), lng = place.geometry.location.lng();
     const gMapsUrl = place.url || `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
     const yelpUrl = `https://www.yelp.com/search?find_desc=${encodeURIComponent(place.name)}&find_loc=${encodeURIComponent(place.formatted_address)}`; 
-    infoWindow.setContent(`<div style="color:#222; min-width:180px; font-family:sans-serif; padding:5px;"><b style="font-size:14px; display:block; margin-bottom:4px;">${place.name}</b><div style="font-size:11px; color:#666; margin-bottom:4px;">📍 ${place.formatted_address || ''}</div><div style="display:flex; flex-direction:column; gap:6px; margin-bottom:12px;"><a href="${gMapsUrl}" target="_blank" style="color:var(--accent); font-weight:bold; font-size:11px; text-decoration:none;">➔ REVIEWS & PHOTOS</a><a href="${yelpUrl}" target="_blank" style="color:var(--accent); font-weight:bold; font-size:11px; text-decoration:none;">➔ SEARCH ON YELP</a></div><button onclick="openModal(${lat},${lng},'${place.name.replace(/'/g, "\\'")}','${(place.formatted_address || '').replace(/'/g, "\\'")}','','${place.website || ''}','${place.formatted_phone_number || ''}','${gMapsUrl}','${yelpUrl}')" style="width:100%; background:var(--accent); color:white; border:none; padding:10px; border-radius:4px; font-weight:bold; cursor:pointer;">PIN THIS PLACE</button></div>`);
+    
+    // REVISED: Yelp moved to bottom row for discovery popup as well
+    infoWindow.setContent(`
+        <div style="color:#222; min-width:180px; font-family:sans-serif; padding:5px;">
+            <b style="font-size:14px; display:block; margin-bottom:4px;">${place.name}</b>
+            <div style="font-size:11px; color:#666; margin-bottom:4px;">📍 ${place.formatted_address || ''}</div>
+            
+            <div class="popup-links" style="margin-bottom: 10px;">
+                <a href="${gMapsUrl}" target="_blank">MAP / PHOTOS</a>
+                <a href="${yelpUrl}" target="_blank">YELP</a>
+            </div>
+
+            <button onclick="openModal(${lat},${lng},'${place.name.replace(/'/g, "\\'")}','${(place.formatted_address || '').replace(/'/g, "\\'")}','','${place.website || ''}','${place.formatted_phone_number || ''}','${gMapsUrl}','${yelpUrl}')" style="width:100%; background:var(--accent); color:white; border:none; padding:10px; border-radius:4px; font-weight:bold; cursor:pointer;">PIN THIS PLACE</button>
+        </div>`);
     infoWindow.setPosition(place.geometry.location); infoWindow.open(map);
     setSheetState(false);
 }
