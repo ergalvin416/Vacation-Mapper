@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>Vacation Mapper V68</title>
+    <title>Vacation Mapper V69</title>
 
     <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyC78EKBgSd2UsLSPUTGO1A-MF78BU20aLg&libraries=places"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
@@ -268,8 +268,23 @@ const SearchModule = {
     showLandmarkPopup(place) {
         const lat = place.geometry.location.lat(), lng = place.geometry.location.lng();
         const gMapsUrl = place.url || `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+        const dUrl = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
         const yelpUrl = `https://www.yelp.com/search?find_desc=${encodeURIComponent(place.name)}&find_loc=${encodeURIComponent(place.formatted_address)}`; 
-        AppState.infoWindow.setContent(`<div style="color:#222; min-width:180px; font-family:sans-serif; padding:5px;"><b style="font-size:14px; display:block; margin-bottom:4px;">${place.name}</b><div style="font-size:11px; color:#666; margin-bottom:4px;">📍 ${place.formatted_address || ''}</div><div class="popup-links" style="margin-bottom:10px;"><a href="${gMapsUrl}" target="_blank">MAP / PHOTOS</a><a href="${yelpUrl}" target="_blank">YELP</a></div><button onclick="UIManager.openModal(${lat},${lng},'${place.name.replace(/'/g, "\\'")}','${(place.formatted_address || '').replace(/'/g, "\\'")}','','${place.website || ''}','${place.formatted_phone_number || ''}','${gMapsUrl}','${yelpUrl}')" style="width:100%; background:var(--accent); color:white; border:none; padding:10px; border-radius:4px; font-weight:bold; cursor:pointer;">PIN THIS PLACE</button></div>`);
+        
+        // UNIFIED POPUP logic
+        AppState.infoWindow.setContent(`
+            <div style="color:#222; min-width:180px; font-family:sans-serif; padding:5px;">
+                <b style="font-size:14px; display:block; margin-bottom:4px;">${place.name}</b>
+                <div style="font-size:11px; color:#666; margin-bottom:4px;">📍 ${place.formatted_address || ''}</div>
+                
+                <div class="popup-links" style="margin-bottom:10px;">
+                    <a href="${gMapsUrl}" target="_blank">MAP</a>
+                    <a href="${dUrl}" target="_blank">DIRECTIONS</a>
+                    <a href="${yelpUrl}" target="_blank">YELP</a>
+                </div>
+
+                <button onclick="UIManager.openModal(${lat},${lng},'${place.name.replace(/'/g, "\\'")}','${(place.formatted_address || '').replace(/'/g, "\\'")}','','${place.website || ''}','${place.formatted_phone_number || ''}','${gMapsUrl}','${yelpUrl}')" style="width:100%; background:var(--accent); color:white; border:none; padding:10px; border-radius:4px; font-weight:bold; cursor:pointer;">PIN THIS PLACE</button>
+            </div>`);
         AppState.infoWindow.setPosition(place.geometry.location); AppState.infoWindow.open(AppState.map); UIManager.setSheetState(false);
     },
     clearFullSearch() {
