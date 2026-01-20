@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>Vacation Mapper V72</title>
+    <title>Vacation Mapper V71</title>
 
     <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyC78EKBgSd2UsLSPUTGO1A-MF78BU20aLg&libraries=places"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
@@ -96,10 +96,9 @@
 </div>
 
 <script>
-// --- CENTRALIZED APP STATE ---
 const AppState = {
     map: null, service: null, infoWindow: null, autocomplete: null,
-    trips: {}, activeTripId: null, markers: [], searchMarkers: [], // Switched to activeTripId
+    trips: {}, activeTrip: null, markers: [], searchMarkers: [],
     pendingCoords: null, editingPinId: null, touchStartY: 0, touchEndY: 0
 };
 
@@ -117,7 +116,6 @@ firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 const auth = firebase.auth();
 
-// --- UI MODULE ---
 const UIManager = {
     initGestures() {
         const handle = document.getElementById('sheetHandle');
@@ -137,7 +135,7 @@ const UIManager = {
         else { sidebar.classList.remove('expanded'); sidebar.scrollTop = 0; }
     },
     openModal(lat, lng, name = '', address = '', id = '', website = '', phone = '', gUrl = '', yUrl = '') {
-        if (!AppState.activeTripId) return alert('Select folder!');
+        if (!AppState.activeTrip) return alert('Select folder!');
         AppState.pendingCoords = { lat, lng }; AppState.editingPinId = id;
         document.getElementById('pName').value = name; document.getElementById('pAddress').value = address;
         document.getElementById('pPhone').value = phone; document.getElementById('pLink').value = website;
@@ -157,23 +155,15 @@ const UIManager = {
     }
 };
 
-// --- DATA MODULE ---
 const TripManager = {
     addTrip() {
         const input = document.getElementById('tripName');
         const n = input.value.trim(); if (!n) return;
-        
-        // FIX: Use .push() to generate a unique ID
-        const newTripRef = db.ref('trips').push();
-        newTripRef.set({ 
-            id: newTripRef.key, 
-            name: n, 
-            created: Date.now(), 
-            pins: {} 
-        }).then(() => { input.value = ''; });
+        const safeKey = n.replace(/[.#$/\[\]]/g, '_');
+        db.ref(`trips/${safeKey}`).set({ created: Date.now(), name: n, pins: {} }).then(() => { input.value = ''; });
     },
     savePin() {
-        if (!AppState.activeTripId) return alert("Select folder!");
+        if (!AppState.activeTrip) return alert("Select folder!");
         const pinId = AppState.editingPinId || Date.now();
         const pinData = { 
             id: pinId, lat: AppState.pendingCoords.lat, lng: AppState.pendingCoords.lng, 
@@ -182,36 +172,35 @@ const TripManager = {
             gUrl: document.getElementById('pgUrl').value, yUrl: document.getElementById('pyUrl').value, 
             notes: document.getElementById('pNotes').value, type: document.getElementById('pType').value 
         };
-        db.ref(`trips/${AppState.activeTripId}/pins/${pinId}`).set(pinData).then(() => { SearchModule.clearFullSearch(); UIManager.closeModal(); });
+        db.ref(`trips/${AppState.activeTrip}/pins/${pinId}`).set(pinData).then(() => { SearchModule.clearFullSearch(); UIManager.closeModal(); });
     },
-    deleteTrip(id) {
-        if (confirm("Delete Trip?")) db.ref(`trips/${id}`).remove();
+    deleteTrip(key) {
+        if (confirm("Delete Trip?")) db.ref(`trips/${key}`).remove();
     },
     deletePin(id) {
-        db.ref(`trips/${AppState.activeTripId}/pins/${id}`).remove();
+        db.ref(`trips/${AppState.activeTrip}/pins/${id}`).remove();
     },
-    loadTrip(id) {
-        AppState.activeTripId = id;
-        document.getElementById('activeTripTitle').innerText = AppState.trips[id].name.toUpperCase();
+    loadTrip(key) {
+        AppState.activeTrip = key;
+        document.getElementById('activeTripTitle').innerText = (AppState.trips[key].name || key).toUpperCase();
         AppState.markers.forEach(m => m.marker.setMap(null));
         AppState.markers = [];
-        const pinObj = AppState.trips[id].pins || {};
+        const pinObj = AppState.trips[key].pins || {};
         Object.values(pinObj).forEach(pin => MapModule.displayMarker(pin));
         this.renderList(); this.renderTrips();
     },
     renderTrips() {
         const el = document.getElementById('tripList'); el.innerHTML = '';
-        Object.keys(AppState.trips).forEach(id => {
-            const trip = AppState.trips[id];
-            const div = document.createElement('div'); div.className = `vacation-item ${AppState.activeTripId === id ? 'active-trip' : ''}`;
-            div.innerHTML = `<span>${trip.name.toUpperCase()}</span><button class='icon-btn' onclick='event.stopPropagation(); TripManager.deleteTrip("${id}")'>🗑️</button>`;
-            div.onclick = () => this.loadTrip(id); el.appendChild(div);
+        Object.keys(AppState.trips).forEach(k => {
+            const div = document.createElement('div'); div.className = `vacation-item ${AppState.activeTrip === k ? 'active-trip' : ''}`;
+            div.innerHTML = `<span>${(AppState.trips[k].name || k).toUpperCase()}</span><button class='icon-btn' onclick='event.stopPropagation(); TripManager.deleteTrip("${k}")'>🗑️</button>`;
+            div.onclick = () => this.loadTrip(k); el.appendChild(div);
         });
     },
     renderList() {
         const el = document.getElementById('groupedList'); el.innerHTML = '';
-        if (!AppState.activeTripId || !AppState.trips[AppState.activeTripId] || !AppState.trips[AppState.activeTripId].pins) return;
-        const pinArray = Object.values(AppState.trips[AppState.activeTripId].pins);
+        if (!AppState.activeTrip || !AppState.trips[AppState.activeTrip] || !AppState.trips[AppState.activeTrip].pins) return;
+        const pinArray = Object.values(AppState.trips[AppState.activeTrip].pins);
         ['🔴 Things to Do', '🟢 Places to Stay', '🟡 Places to Eat'].forEach(cat => {
             const items = pinArray.filter(p => p.type === cat); if (!items.length) return;
             el.innerHTML += `<div class='category-header'>${cat}</div>`;
@@ -224,13 +213,12 @@ const TripManager = {
         });
     },
     editPin(id) { 
-        const pin = AppState.trips[AppState.activeTripId].pins[id]; if(!pin) return; 
+        const pin = AppState.trips[AppState.activeTrip].pins[id]; if(!pin) return; 
         UIManager.openModal(pin.lat, pin.lng, pin.name, pin.address, pin.id, pin.link, pin.phone, pin.gUrl, pin.yUrl); 
         document.getElementById('pNotes').value = pin.notes || ''; document.getElementById('pType').value = pin.type;
     }
 };
 
-// --- MAP MODULE ---
 const MapModule = {
     displayMarker(pin) {
         let pinColor = pin.type.includes("🔴") ? "#e74c3c" : pin.type.includes("🟢") ? "#27ae60" : "#f1c40f";
@@ -248,11 +236,10 @@ const MapModule = {
     focusOnPin(id, lat, lng) {
         AppState.map.setCenter({lat, lng}); AppState.map.setZoom(17);
         const mObj = AppState.markers.find(m => m.id == id);
-        if (mObj) this.openPopup(AppState.trips[AppState.activeTripId].pins[id], mObj.marker);
+        if (mObj) this.openPopup(AppState.trips[AppState.activeTrip].pins[id], mObj.marker);
     }
 };
 
-// --- SEARCH MODULE ---
 const SearchModule = {
     handleSearchSelect(p) {
         this.clearSearchMarkers();
@@ -279,7 +266,6 @@ const SearchModule = {
     clearSearchMarkers() { AppState.searchMarkers.forEach(m => m.setMap(null)); AppState.searchMarkers = []; }
 };
 
-// --- INITIALIZATION ---
 function initApp() {
     AppState.map = new google.maps.Map(document.getElementById('map'), { center:{lat:39.8,lng:-98.5}, zoom:4, mapTypeId:'hybrid', clickableIcons:true, mapTypeControl:false, streetViewControl:false, tilt: 0 });
     AppState.service = new google.maps.places.PlacesService(AppState.map);
@@ -328,7 +314,7 @@ function initApp() {
     db.ref('trips').on('value', (s) => { 
         AppState.trips = s.val() || {}; 
         localStorage.setItem('vmapper_pins_backup', JSON.stringify(AppState.trips));
-        TripManager.renderTrips(); if (AppState.activeTripId) TripManager.loadTrip(AppState.activeTripId); 
+        TripManager.renderTrips(); if (AppState.activeTrip) TripManager.loadTrip(AppState.activeTrip); 
     });
     UIManager.initGestures();
 }
