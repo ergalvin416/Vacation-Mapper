@@ -279,7 +279,6 @@ const SearchModule = {
         const dUrl = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
         const yelpUrl = `https://www.yelp.com/search?find_desc=${encodeURIComponent(place.name)}&find_loc=${encodeURIComponent(place.formatted_address)}`; 
         
-        // NEW: Web and Menu Links logic
         const websiteLink = place.website ? `<a href="${place.website}" target="_blank">WEB</a>` : '';
         const menuKeywords = ["menu", "order", "eat", "dining"];
         const hasMenu = place.website && menuKeywords.some(k => place.website.toLowerCase().includes(k));
@@ -370,24 +369,21 @@ function initApp() {
 
     sBox.addEventListener('input', () => { clearBtn.style.display = sBox.value ? 'flex' : 'none'; });
     
-    // UPDATED ENTER KEY LOGIC
+    // RELIABLE ENTER KEY LOGIC
     sBox.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && sBox.value) {
             clearBtn.style.display = 'flex';
             AppState.service.textSearch({ query: sBox.value, bounds: AppState.map.getBounds() }, (results, status) => {
                 if (status === google.maps.places.PlacesServiceStatus.OK) {
                     SearchModule.clearSearchMarkers();
-                    const q = sBox.value.toLowerCase();
-                    // HEURISTIC: Target Mode if unique result or address-like query
-                    const isTarget = results.length <= 2 || /\d/.test(q); 
                     
-                    if (isTarget) {
+                    // FIXED: Always show results, target only if specific
+                    if (results.length === 1) {
                         AppState.map.setCenter(results[0].geometry.location);
                         AppState.map.setZoom(17);
                         SearchModule.getDetailsAndPopup(results[0].place_id);
                     }
                     
-                    // Always show arrows for context (Discovery)
                     results.forEach((res) => {
                         const marker = new google.maps.Marker({ 
                             map: AppState.map, position: res.geometry.location, 
@@ -396,6 +392,12 @@ function initApp() {
                         marker.addListener('click', () => SearchModule.getDetailsAndPopup(res.place_id));
                         AppState.searchMarkers.push(marker);
                     });
+                    
+                    if (results.length > 1) {
+                        const bounds = new google.maps.LatLngBounds();
+                        results.forEach(r => bounds.extend(r.geometry.location));
+                        AppState.map.fitBounds(bounds);
+                    }
                     UIManager.setSheetState(false);
                 }
             });
@@ -419,3 +421,4 @@ window.onload = initApp;
 </script>
 </body>
 </html>
+
