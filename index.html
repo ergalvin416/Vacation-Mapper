@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>Vacation Mapper V71.4</title>
+    <title>Vacation Mapper V71.5</title>
 
     <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyC78EKBgSd2UsLSPUTGO1A-MF78BU20aLg&libraries=places"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
@@ -41,7 +41,7 @@
         .place-info { flex: 1; min-width: 0; }
         .place-info b { display:block; font-size: 1.05em; cursor: pointer; word-wrap: break-word; margin-bottom: 4px; }
         
-        .note-preview { font-size: 12px; color: #aaa; font-style: italic; line-height: 1.4; word-wrap: break-word; cursor: pointer; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; transition: max-height 0.3s ease; }
+        .note-preview { font-size: 12px; color: #aaa; font-style: italic; line-height: 1.4; word-wrap: break-word; cursor: pointer; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
         .note-preview.expanded { display: block; -webkit-line-clamp: initial; overflow: visible; color: #fff; }
         
         .button-group { display: flex; gap: 8px; flex-shrink: 0; }
@@ -255,7 +255,6 @@ const SearchModule = {
         this.clearSearchMarkers();
         if (p.geometry.viewport) AppState.map.fitBounds(p.geometry.viewport);
         else { AppState.map.setCenter(p.geometry.location); AppState.map.setZoom(17); }
-
         this.getDetailsAndPopup(p.place_id);
         UIManager.setSheetState(false);
     },
@@ -265,7 +264,7 @@ const SearchModule = {
         } else {
             AppState.service.getDetails({ 
                 placeId: placeId, 
-                fields: ['name', 'formatted_address', 'geometry', 'website', 'formatted_phone_number', 'url', 'opening_hours'] 
+                fields: ['name', 'formatted_address', 'geometry', 'website', 'formatted_phone_number', 'url'] 
             }, (res, status) => { 
                 if (status === 'OK') {
                     AppState.placeCache[placeId] = res;
@@ -280,12 +279,11 @@ const SearchModule = {
         const dUrl = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
         const yelpUrl = `https://www.yelp.com/search?find_desc=${encodeURIComponent(place.name)}&find_loc=${encodeURIComponent(place.formatted_address)}`; 
         
-        // Check for Web and Menu links
+        // NEW: Web and Menu Links logic
         const websiteLink = place.website ? `<a href="${place.website}" target="_blank">WEB</a>` : '';
-        // Note: 'website' field in Places Details is the primary business URL.
-        // For specific menu links, we check if Google provides it in the 'website' or specific attribution if available.
-        // As standard API doesn't always have a separate 'menu' field, we'll hide it if unavailable.
-        const menuLink = (place.website && place.website.toLowerCase().includes("menu")) ? `<a href="${place.website}" target="_blank">MENU</a>` : '';
+        const menuKeywords = ["menu", "order", "eat", "dining"];
+        const hasMenu = place.website && menuKeywords.some(k => place.website.toLowerCase().includes(k));
+        const menuLink = hasMenu ? `<a href="${place.website}" target="_blank">MENU</a>` : '';
 
         AppState.infoWindow.setContent(`
             <div style="color:#222; min-width:180px; font-family:sans-serif; padding:5px;">
@@ -304,7 +302,6 @@ const SearchModule = {
         
         AppState.infoWindow.setPosition(place.geometry.location); 
         AppState.infoWindow.open(AppState.map); 
-        UIManager.setSheetState(false);
     },
     clearFullSearch() {
         const sBox = document.getElementById('search-box'); sBox.value = '';
@@ -352,13 +349,7 @@ const MapModule = {
 
 function initApp() {
     AppState.map = new google.maps.Map(document.getElementById('map'), { 
-        center:{lat:39.8,lng:-98.5}, 
-        zoom:4, 
-        mapTypeId:'hybrid', 
-        clickableIcons:true, 
-        mapTypeControl:false, 
-        streetViewControl:false, 
-        tilt: 0 
+        center:{lat:39.8,lng:-98.5}, zoom:4, mapTypeId:'hybrid', clickableIcons:true, mapTypeControl:false, streetViewControl:false, tilt: 0 
     });
     AppState.service = new google.maps.places.PlacesService(AppState.map);
     AppState.infoWindow = new google.maps.InfoWindow();
@@ -374,39 +365,37 @@ function initApp() {
     
     AppState.autocomplete.addListener('place_changed', () => { 
         const p = AppState.autocomplete.getPlace(); 
-        if (p.geometry) { 
-            clearBtn.style.display = 'flex'; 
-            SearchModule.handleSearchSelect(p); 
-        }
+        if (p.geometry) { clearBtn.style.display = 'flex'; SearchModule.handleSearchSelect(p); }
     });
 
     sBox.addEventListener('input', () => { clearBtn.style.display = sBox.value ? 'flex' : 'none'; });
     
-    // SMART SEARCH: Handles Enter Key
+    // UPDATED ENTER KEY LOGIC
     sBox.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && sBox.value) {
             clearBtn.style.display = 'flex';
             AppState.service.textSearch({ query: sBox.value, bounds: AppState.map.getBounds() }, (results, status) => {
                 if (status === google.maps.places.PlacesServiceStatus.OK) {
                     SearchModule.clearSearchMarkers();
-                    // Auto-select #1 result if it's a specific search
-                    if (results.length > 0) {
-                        const topResult = results[0];
-                        AppState.map.setCenter(topResult.geometry.location);
+                    const q = sBox.value.toLowerCase();
+                    // HEURISTIC: Target Mode if unique result or address-like query
+                    const isTarget = results.length <= 2 || /\d/.test(q); 
+                    
+                    if (isTarget) {
+                        AppState.map.setCenter(results[0].geometry.location);
                         AppState.map.setZoom(17);
-                        SearchModule.getDetailsAndPopup(topResult.place_id);
-                        
-                        // Drop markers for others (Discovery Mode)
-                        results.forEach((res, i) => {
-                            const marker = new google.maps.Marker({ 
-                                map: AppState.map, 
-                                position: res.geometry.location, 
-                                icon: { path: google.maps.SymbolPath.BACKWARD_CLOSED_ARROW, scale: 5, fillColor: "#4a90e2", fillOpacity: 0.9, strokeColor: "#ffffff", strokeWeight: 2 } 
-                            });
-                            marker.addListener('click', () => SearchModule.getDetailsAndPopup(res.place_id));
-                            AppState.searchMarkers.push(marker);
-                        });
+                        SearchModule.getDetailsAndPopup(results[0].place_id);
                     }
+                    
+                    // Always show arrows for context (Discovery)
+                    results.forEach((res) => {
+                        const marker = new google.maps.Marker({ 
+                            map: AppState.map, position: res.geometry.location, 
+                            icon: { path: google.maps.SymbolPath.BACKWARD_CLOSED_ARROW, scale: 5, fillColor: "#4a90e2", fillOpacity: 0.9, strokeColor: "#ffffff", strokeWeight: 2 } 
+                        });
+                        marker.addListener('click', () => SearchModule.getDetailsAndPopup(res.place_id));
+                        AppState.searchMarkers.push(marker);
+                    });
                     UIManager.setSheetState(false);
                 }
             });
@@ -415,8 +404,7 @@ function initApp() {
 
     AppState.map.addListener('click', (e) => {
         if (e.placeId) {
-            e.stop();
-            SearchModule.getDetailsAndPopup(e.placeId);
+            e.stop(); SearchModule.getDetailsAndPopup(e.placeId);
         } else { UIManager.openModal(e.latLng.lat(), e.latLng.lng()); }
     });
 
@@ -430,5 +418,4 @@ function initApp() {
 window.onload = initApp;
 </script>
 </body>
-</html> 
-
+</html>
