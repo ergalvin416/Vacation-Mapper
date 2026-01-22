@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>Vacation Mapper V71.5</title>
+    <title>Vacation Mapper V71.7</title>
 
     <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyC78EKBgSd2UsLSPUTGO1A-MF78BU20aLg&libraries=places"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
@@ -92,6 +92,7 @@
     <input id="pAddress" placeholder="ADDRESS" />
     <input id="pPhone" placeholder="PHONE NUMBER" />
     <input id="pLink" placeholder="WEBSITE URL" />
+    <input id="pmUrl" placeholder="MENU URL (OPTIONAL)" />
     <input id="pgUrl" type="hidden" />
     <input id="pyUrl" type="hidden" />
     <textarea id="pNotes" placeholder="NOTES..."></textarea>
@@ -144,11 +145,12 @@ const UIManager = {
         if (isExpanded) sidebar.classList.add('expanded');
         else { sidebar.classList.remove('expanded'); sidebar.scrollTop = 0; }
     },
-    openModal(lat, lng, name = '', address = '', id = '', website = '', phone = '', gUrl = '', yUrl = '') {
+    openModal(lat, lng, name = '', address = '', id = '', website = '', phone = '', gUrl = '', yUrl = '', mUrl = '') {
         if (!AppState.activeTrip) return alert('Select folder!');
         AppState.pendingCoords = { lat, lng }; AppState.editingPinId = id;
         document.getElementById('pName').value = name; document.getElementById('pAddress').value = address;
         document.getElementById('pPhone').value = phone; document.getElementById('pLink').value = website;
+        document.getElementById('pmUrl').value = mUrl;
         document.getElementById('pgUrl').value = gUrl; document.getElementById('pyUrl').value = yUrl;
         if (!id) { document.getElementById('pNotes').value = ''; document.getElementById('pType').value = '🔴 Things to Do'; }
         document.getElementById('modalTitle').innerText = id ? "EDIT PIN" : "ADD PIN";
@@ -179,7 +181,8 @@ const TripManager = {
         const pinData = { 
             id: pinId, lat: AppState.pendingCoords.lat, lng: AppState.pendingCoords.lng, 
             name: document.getElementById('pName').value, address: document.getElementById('pAddress').value, 
-            phone: document.getElementById('pPhone').value, link: document.getElementById('pLink').value, 
+            phone: document.getElementById('pPhone').value, link: document.getElementById('pLink').value,
+            mUrl: document.getElementById('pmUrl').value, 
             gUrl: document.getElementById('pgUrl').value, yUrl: document.getElementById('pyUrl').value, 
             notes: document.getElementById('pNotes').value, type: document.getElementById('pType').value 
         };
@@ -238,6 +241,7 @@ const TripManager = {
                             <a href="${dU}" target="_blank">DIRECTIONS</a>
                             ${p.yUrl ? `<a href="${p.yUrl}" target="_blank">YELP</a>` : ''}
                             ${p.link ? `<a href="${p.link}" target="_blank">WEB</a>` : ''}
+                            ${p.mUrl ? `<a href="${p.mUrl}" target="_blank">MENU</a>` : ''}
                         </div>
                     </div>`;
             });
@@ -245,7 +249,7 @@ const TripManager = {
     },
     editPin(id) { 
         const pin = AppState.trips[AppState.activeTrip].pins[id]; if(!pin) return; 
-        UIManager.openModal(pin.lat, pin.lng, pin.name, pin.address, pin.id, pin.link, pin.phone, pin.gUrl, pin.yUrl); 
+        UIManager.openModal(pin.lat, pin.lng, pin.name, pin.address, pin.id, pin.link, pin.phone, pin.gUrl, pin.yUrl, pin.mUrl); 
         document.getElementById('pNotes').value = pin.notes || ''; document.getElementById('pType').value = pin.type;
     }
 };
@@ -280,9 +284,9 @@ const SearchModule = {
         const yelpUrl = `https://www.yelp.com/search?find_desc=${encodeURIComponent(place.name)}&find_loc=${encodeURIComponent(place.formatted_address)}`; 
         
         const websiteLink = place.website ? `<a href="${place.website}" target="_blank">WEB</a>` : '';
-        const menuKeywords = ["menu", "order", "eat", "dining"];
-        const hasMenu = place.website && menuKeywords.some(k => place.website.toLowerCase().includes(k));
-        const menuLink = hasMenu ? `<a href="${place.website}" target="_blank">MENU</a>` : '';
+        const menuKeywords = ["menu", "order", "eat", "dining", "allmenus", "openmenu", "singleplatform"];
+        const isLikelyMenu = place.website && menuKeywords.some(k => place.website.toLowerCase().includes(k));
+        const menuLink = isLikelyMenu ? `<a href="${place.website}" target="_blank">MENU</a>` : '';
 
         AppState.infoWindow.setContent(`
             <div style="color:#222; min-width:180px; font-family:sans-serif; padding:5px;">
@@ -295,7 +299,7 @@ const SearchModule = {
                     ${websiteLink}
                     ${menuLink}
                 </div>
-                <button onclick="UIManager.openModal(${lat},${lng},'${place.name.replace(/'/g, "\\'")}','${(place.formatted_address || '').replace(/'/g, "\\'")}','','${place.website || ''}','${place.formatted_phone_number || ''}','${gMapsUrl}','${yelpUrl}')" 
+                <button onclick="UIManager.openModal(${lat},${lng},'${place.name.replace(/'/g, "\\'")}','${(place.formatted_address || '').replace(/'/g, "\\'")}','','${place.website || ''}','${place.formatted_phone_number || ''}','${gMapsUrl}','${yelpUrl}','${isLikelyMenu ? place.website : ''}')" 
                 style="width:100%; background:var(--accent); color:white; border:none; padding:10px; border-radius:4px; font-weight:bold; cursor:pointer;">PIN THIS PLACE</button>
             </div>`);
         
@@ -334,6 +338,7 @@ const MapModule = {
                     <a href="${dU}" target="_blank">DIRECTIONS</a>
                     ${yU ? `<a href="${yU}" target="_blank">YELP</a>` : ''}
                     ${pin.link ? `<a href="${pin.link}" target="_blank">WEB</a>` : ''}
+                    ${pin.mUrl ? `<a href="${pin.mUrl}" target="_blank">MENU</a>` : ''}
                 </div>
             </div>`);
         AppState.infoWindow.open(AppState.map, marker); 
@@ -369,7 +374,6 @@ function initApp() {
 
     sBox.addEventListener('input', () => { clearBtn.style.display = sBox.value ? 'flex' : 'none'; });
     
-    // RELIABLE ENTER KEY LOGIC
     sBox.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && sBox.value) {
             clearBtn.style.display = 'flex';
@@ -377,7 +381,6 @@ function initApp() {
                 if (status === google.maps.places.PlacesServiceStatus.OK) {
                     SearchModule.clearSearchMarkers();
                     
-                    // FIXED: Always show results, target only if specific
                     if (results.length === 1) {
                         AppState.map.setCenter(results[0].geometry.location);
                         AppState.map.setZoom(17);
@@ -421,4 +424,3 @@ window.onload = initApp;
 </script>
 </body>
 </html>
-
